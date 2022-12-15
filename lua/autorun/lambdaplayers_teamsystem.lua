@@ -3,18 +3,17 @@ local RandomPairs = RandomPairs
 local GetConVar = GetConVar
 local GetAll = ents.GetAll
 local ignorePlys = GetConVar( "ai_ignoreplayers" )
+local hooksPrefix = "LambdaTeamSystemHook_"
 
 local function OnConVarsCreated()
 
     CreateLambdaConvar( "lambdaplayers_teams_enabled", 0, true, false, false, "Enables the team system that will allow Lambda Players to be assigned to various different teams", 0, 1, { name = "Enable Team System", type = "Bool", category = "Team System" } )
 
-    CreateLambdaConvar( "lambdaplayers_teams_teamname", "", true, false, false, "The team the next spawned Lambda Players will be assigned to. Leave empty to not assign to any", 0, 1, { name = "Team Name", type = "Text", category = "Team System" } )
+    local lambdaTeam = CreateLambdaConvar( "lambdaplayers_teams_teamname", "", true, false, false, "The team the next spawned Lambda Players will be assigned to. Leave empty to not assign to any", 0, 1, { name = "Team Name", type = "Text", category = "Team System" } )
     CreateLambdaColorConvar( "lambdaplayers_teams_teamcolor", Color( 255, 255, 255 ), false, false, "The color to use for team the next Lambda Player spawns in", { name = "Team Color", category = "Team System" } )
-    
-    CreateLambdaConvar( "lambdaplayers_teams_myteam", "", true, true, true, "Determines what team you are currenly assigned to. Leave empty to be neutral to every team", 0, 1, { name = "My Team", type = "Text", category = "Team System" }  )
-    CreateLambdaConsoleCommand( "lambdaplayers_teams_copyteamnametomyteam", function( ply )
-        GetConVar( "lambdaplayers_teams_myteam" ):SetString( GetConVar( "lambdaplayers_teams_teamname" ):GetString() )
-    end, true, "Copies the currently set team name to my team setting", { name = "Copy Team Name To My Team", category = "Team System" } )
+
+    local plyTeam = CreateLambdaConvar( "lambdaplayers_teams_myteam", "", true, true, true, "Determines what team you are currenly assigned to. Leave empty to be neutral to every team", 0, 1, { name = "My Team", type = "Text", category = "Team System" }  )
+    CreateLambdaConsoleCommand( "lambdaplayers_teams_copyteamnametomyteam", function( ply ) plyTeam:SetString( lambdaTeam:GetString() ) end, true, "Copies the currently set team name to my team setting", { name = "Copy Team Name To My Team", category = "Team System" } )
 
     CreateLambdaConvar( "lambdaplayers_teams_displaymyteamname", 1, true, true, true, "If your team's name should display above your teammates when you're near them", 0, 1, { name = "Display My Team Name", type = "Bool", category = "Team System" } )
     CreateLambdaConvar( "lambdaplayers_teams_attackotherteams", 1, true, false, false, "If the Lambda Teams should attack other teams on sight", 0, 1, { name = "Attack Other Teams", type = "Bool", category = "Team System" } )
@@ -23,12 +22,20 @@ local function OnConVarsCreated()
 
 end
 
+local teamsEnabled
+local teamColorR, teamColorG, teamColorB
 local function OnInitialize( self, wepEnt )
-    if GetConVar( "lambdaplayers_teams_enabled" ):GetBool() then
+    teamsEnabled = teamsEnabled or GetConVar( "lambdaplayers_teams_enabled" )
+    
+    if teamsEnabled:GetBool() then
         local spawnTeam = GetConVar( "lambdaplayers_teams_teamname" ):GetString()
         if spawnTeam != "" then
+            teamColorR = teamColorR or GetConVar( "lambdaplayers_teams_teamcolor_r" )
+            teamColorG = teamColorG or GetConVar( "lambdaplayers_teams_teamcolor_g" )
+            teamColorB = teamColorB or GetConVar( "lambdaplayers_teams_teamcolor_b" )
+
             self.l_Team = spawnTeam
-            self.l_TeamColor = Color( GetConVar( "lambdaplayers_teams_teamcolor_r" ):GetInt(), GetConVar( "lambdaplayers_teams_teamcolor_g" ):GetInt(), GetConVar( "lambdaplayers_teams_teamcolor_b" ):GetInt() )
+            self.l_TeamColor = Color( teamColorR:GetInt(), teamColorG:GetInt(), teamColorB:GetInt() )
         end
     end
 
@@ -54,8 +61,8 @@ local function OnInitialize( self, wepEnt )
     end
 end
 
-hook.Add( "LambdaOnConvarsCreated", "LambdaTeamSystem_Convars", OnConVarsCreated )
-hook.Add( "LambdaOnInitialize", "LambdaTeamSystem_OnInitialize", OnInitialize )
+hook.Add( "LambdaOnConvarsCreated", hooksPrefix .. "OnConVarsCreated", OnConVarsCreated )
+hook.Add( "LambdaOnInitialize", hooksPrefix .. "OnInitialize", OnInitialize )
 
 if ( SERVER ) then
 
@@ -64,11 +71,15 @@ if ( SERVER ) then
     local random = math.random
     local CurTime = CurTime
 
+    local attackOthers
     local function OnThink( self, wepEnt )
         if CurTime() <= self.l_NextEnemyTeamSearchT then return end
         self.l_NextEnemyTeamSearchT = CurTime() + 1.0
 
-        if !self.l_Team or self:GetState() == "Combat" or !GetConVar( "lambdaplayers_teams_attackotherteams" ):GetBool() then return end
+        if !self.l_Team or self:GetState() == "Combat" then return end
+
+        attackOthers = attackOthers or GetConVar( "lambdaplayers_teams_attackotherteams" )
+        if !attackOthers:GetBool() then return end
 
         local surroundings = self:FindInSphere( nil, 2000, function( ent )
             return ( LambdaIsValid( ent ) and ( ent.IsLambdaPlayer or ent:IsPlayer() ) and self:CanTarget( ent ) )
@@ -81,10 +92,25 @@ if ( SERVER ) then
         if self:IsInMyTeam( target ) then return true end
     end
 
+    local noFFs
+    local function OnPlayerShouldTakeDamage( ply, attacker )
+        local plyTeam = ply:GetInfo( "lambdaplayers_teams_myteam" )
+        if !plyTeam or plyTeam == "" then return end
+
+        local attTeam = ( attacker:IsPlayer() and attacker:GetInfo( "lambdaplayers_teams_myteam" ) or attacker.l_Team )
+        if !attTeam or attTeam == "" or plyTeam != attTeam then return end
+
+        noFFs = noFFs or GetConVar( "lambdaplayers_teams_nofriendlyfire" )
+        if noFFs:GetBool() then return false end
+    end
     local function OnInjured( self, dmginfo )
-        if !self.l_Team or !GetConVar( "lambdaplayers_teams_nofriendlyfire" ):GetBool() then return end
+        if !self.l_Team then return end
+
         local attacker = dmginfo:GetAttacker()
-        if IsValid( attacker ) and attacker != self and self:IsInMyTeam( attacker ) then return true end
+        if !IsValid( attacker ) or attacker == self or !self:IsInMyTeam( attacker ) then return end
+
+        noFFs = noFFs or GetConVar( "lambdaplayers_teams_nofriendlyfire" )
+        if noFFs:GetBool() then return true end
     end
 
     local function OnOtherInjured( self, victim, dmginfo, tookDamage )
@@ -100,11 +126,13 @@ if ( SERVER ) then
         end
     end
 
+    local stickTogether
     local function OnBeginMove( self, pos, isonnavmesh )
-        if !GetConVar( "lambdaplayers_teams_sticktogether" ):GetBool() then return end
-
         local state = self:GetState()
         if ( state != "Idle" and state != "FindTarget" ) or random( 1, 100 ) < 30 then return end
+
+        stickTogether = stickTogether or GetConVar( "lambdaplayers_teams_sticktogether" )
+        if !stickTogether:GetBool() then return end
 
         local rndMember = self:GetRandomTeamMember()
         if IsValid( rndMember ) then
@@ -117,31 +145,34 @@ if ( SERVER ) then
         end
     end
 
-    hook.Add( "LambdaOnThink", "LambdaTeamSystem_OnThink", OnThink )
-    hook.Add( "LambdaCanTarget", "LambdaTeamSystem_OnCanTarget", OnCanTarget )
-    hook.Add( "LambdaOnInjured", "LambdaTeamSystem_OnInjured", OnInjured )
-    hook.Add( "LambdaOnOtherInjured", "LambdaTeamSystem_OnOtherInjured", OnOtherInjured )
-    hook.Add( "LambdaOnBeginMove", "LambdaTeamSystem_OnBeginMove", OnBeginMove )
+    hook.Add( "LambdaOnThink", hooksPrefix .. "OnThink", OnThink )
+    hook.Add( "LambdaCanTarget", hooksPrefix .. "OnCanTarget", OnCanTarget )
+    hook.Add( "LambdaOnInjured", hooksPrefix .. "OnInjured", OnInjured )
+    hook.Add( "LambdaOnOtherInjured", hooksPrefix .. "OnOtherInjured", OnOtherInjured )
+    hook.Add( "LambdaOnBeginMove", hooksPrefix .. "OnBeginMove", OnBeginMove )
+    hook.Add( "PlayerShouldTakeDamage", hooksPrefix .. "OnPlayerShouldTakeDamage", OnPlayerShouldTakeDamage )
 
 end
 
 if ( CLIENT ) then
 
     local DrawText = draw.DrawText
-    local uiScale = GetConVar( "lambdaplayers_uiscale" )
+    local UIScale = GetConVar( "lambdaplayers_uiscale" )
     local ScrW = ScrW
     local ScrH = ScrH
     local LocalPlayer = LocalPlayer
     local ipairs = ipairs
     local teamNameTraceTbl = {}
     local TraceLine = util.TraceLine
-    local FindByClass = ents.FindByClass
+    local GetLambdaPlayers = GetLambdaPlayers
+    local tobool = tobool
+    local table_IsEmpty = table.IsEmpty
 
     local function OnGetDisplayColor( self, ply )
         if self.l_TeamColor then return self.l_TeamColor end
     end
 
-    hook.Add( "HUDPaint", "LambdaTeamSystem_HUDPaint", function()
+    local function OnHUDPaint()
         local ply = LocalPlayer()
         local sw, sh = ScrW(), ScrH()
         local traceEnt = ply:GetEyeTrace().Entity
@@ -150,31 +181,39 @@ if ( CLIENT ) then
             local entTeam = traceEnt.l_Team
             if entTeam then 
                 local color = traceEnt:GetDisplayColor()
-                local height = ( traceEnt.l_friends and 1.67 or 1.77 )
-                DrawText( "Team: " .. entTeam, "lambdaplayers_displayname", ( sw / 2 ), ( sh / height ) + LambdaScreenScale( 1 + uiScale:GetFloat() ), color, TEXT_ALIGN_CENTER ) 
+                
+                local friendTbl = traceEnt.l_friends
+                local height = ( ( friendTbl and !table_IsEmpty( friendTbl ) ) and 1.68 or 1.78 )
+
+                DrawText( "Team: " .. entTeam, "lambdaplayers_displayname", ( sw / 2 ), ( sh / height ) + LambdaScreenScale( 1 + UIScale:GetFloat() ), color, TEXT_ALIGN_CENTER ) 
             end
         end
 
         local plyTeam = ply:GetInfo( "lambdaplayers_teams_myteam" )
         if plyTeam != "" and tobool( ply:GetInfo( "lambdaplayers_teams_displaymyteamname" ) ) then
             local eyePos = ply:EyePos()
+            
             teamNameTraceTbl.start = eyePos
+            teamNameTraceTbl.filter = { ply }
 
-            for _, v in ipairs( FindByClass( "npc_lambdaplayer" ) ) do
-                if !LambdaIsValid( v ) or !v.l_Team or v.l_Team != plyTeam then continue end
+            for _, v in ipairs( GetLambdaPlayers() ) do
+                local vTeam = v.l_Team
+                if !vTeam or vTeam != plyTeam or v:GetIsDead() then continue end
 
                 local textPos = ( v:GetPos() + v:GetUp() * 96 )
                 if textPos:DistToSqr( eyePos ) > ( 1000 * 1000 ) then continue end
 
                 teamNameTraceTbl.endpos = textPos
-                teamNameTraceTbl.filter = { ply, v }
+                teamNameTraceTbl.filter[ 2 ] = v
                 if TraceLine( teamNameTraceTbl ).Hit then continue end
 
                 local drawPos = textPos:ToScreen()
                 DrawText( plyTeam .. "'s Member", "lambdaplayers_displayname", drawPos.x, drawPos.y, v.l_TeamColor, TEXT_ALIGN_CENTER )
             end
         end
-    end )
-    hook.Add( "LambdaGetDisplayColor", "LambdaTeamSystem_OnGetDisplayColor", OnGetDisplayColor )
+    end
+
+    hook.Add( "HUDPaint", hooksPrefix .. "OnHUDPaint", OnHUDPaint )
+    hook.Add( "LambdaGetDisplayColor", hooksPrefix .. "OnGetDisplayColor", OnGetDisplayColor )
 
 end
