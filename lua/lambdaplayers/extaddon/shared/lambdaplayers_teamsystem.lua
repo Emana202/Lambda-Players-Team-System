@@ -21,9 +21,12 @@ CreateLambdaConvar( "lambdaplayers_teams_displaymyteamname", 1, true, true, true
 CreateLambdaConsoleCommand( "lambdaplayers_teams_copyteamnametomyteam", function( ply ) plyTeam:SetString( lambdaTeam:GetString() ) end, true, "Copies the currently set team name to my team setting", { name = "Copy Team Name To My Team", category = "Team System" } )
 
 hook.Add( "LambdaOnInitialize", hooksPrefix .. "OnInitialize", function( self, wepEnt )
-    if teamsEnabled:GetBool() and lambdaTeam:GetString() != "" then
-        self.l_Team = spawnTeam
-        self.l_TeamColor = Color( teamColorR:GetInt(), teamColorG:GetInt(), teamColorB:GetInt() )
+    if teamsEnabled:GetBool() then 
+        local spawnTeam = lambdaTeam:GetString()
+        if spawnTeam != "" then
+            self.l_Team = spawnTeam
+            self.l_TeamColor = Color( teamColorR:GetInt(), teamColorG:GetInt(), teamColorB:GetInt() )
+        end
     end
 
     function self:IsInMyTeam( ent )
