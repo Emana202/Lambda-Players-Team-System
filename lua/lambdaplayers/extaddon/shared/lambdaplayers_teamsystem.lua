@@ -11,13 +11,15 @@ local plyTeam = CreateLambdaConvar( "lambdaplayers_teams_myteam", "", true, true
 local attackOthers = CreateLambdaConvar( "lambdaplayers_teams_attackotherteams", 1, true, false, false, "If the Lambda Teams should attack other teams on sight", 0, 1, { name = "Attack Other Teams", type = "Bool", category = "Team System" } )
 local noFFs = CreateLambdaConvar( "lambdaplayers_teams_nofriendlyfire", 1, true, false, false, "If the Lambda Teams shouldn't be able to damage their teammates", 0, 1, { name = "No Friendly Fire", type = "Bool", category = "Team System" } )
 local stickTogether = CreateLambdaConvar( "lambdaplayers_teams_sticktogether", 1, true, false, false, "If members of Lambda Team should stick together if possible", 0, 1, { name = "Stick Together", type = "Bool", category = "Team System" } )
+local huntDown = CreateLambdaConvar( "lambdaplayers_teams_huntdownotherteams", 0, true, false, false, "If members of Lambda Team should stick together if possible", 0, 1, { name = "Stick Together", type = "Bool", category = "Team System" } )
+local drawTeamName = CreateLambdaConvar( "lambdaplayers_teams_drawteamname", 1, true, true, false, "If your teammates should have your team's name drawn above them", 0, 1, { name = "Draw Team Name Above Teammates", type = "Bool", category = "Team System" } )
+local drawHalo = CreateLambdaConvar( "lambdaplayers_teams_drawhalo", 1, true, true, false, "If your teammates should have halos drawn around them", 0, 1, { name = "Draw Halos Around Teammates", type = "Bool", category = "Team System" } )
 
 CreateLambdaColorConvar( "lambdaplayers_teams_teamcolor", Color( 255, 255, 255 ), false, false, "The color to use for team the next Lambda Player spawns in", { name = "Team Color", category = "Team System" } )
 local teamColorR = GetConVar( "lambdaplayers_teams_teamcolor_r" )
 local teamColorG = GetConVar( "lambdaplayers_teams_teamcolor_g" )
 local teamColorB = GetConVar( "lambdaplayers_teams_teamcolor_b" )
 
-CreateLambdaConvar( "lambdaplayers_teams_displaymyteamname", 1, true, true, true, "If your team's name should display above your teammates when you're near them", 0, 1, { name = "Display My Team Name", type = "Bool", category = "Team System" } )
 CreateLambdaConsoleCommand( "lambdaplayers_teams_copyteamnametomyteam", function( ply ) plyTeam:SetString( lambdaTeam:GetString() ) end, true, "Copies the currently set team name to my team setting", { name = "Copy Team Name To My Team", category = "Team System" } )
 
 hook.Add( "LambdaOnInitialize", hooksPrefix .. "OnInitialize", function( self, wepEnt )
@@ -65,9 +67,11 @@ if ( SERVER ) then
         if !self.l_Team or self:GetState() == "Combat" or !attackOthers:GetBool() then return end
 
         local surroundings = self:FindInSphere( nil, 2000, function( ent )
-            return ( LambdaIsValid( ent ) and ( ent.IsLambdaPlayer or ent:IsPlayer() ) and self:CanTarget( ent ) )
+            if !LambdaIsValid( ent ) or !self:CanTarget( ent ) then return end
+            return ( ent.IsLambdaPlayer and ent.l_Team or ent:IsPlayer() and ent:GetInfo( "lambdaplayers_teams_myteam" ) != "" )
         end )
         if #surroundings == 0 then return end
+        
         self:AttackTarget( surroundings[ random( #surroundings ) ] )
     end )
     
@@ -96,19 +100,35 @@ if ( SERVER ) then
             self:AttackTarget( victim )
         end
     end )
-    
+
     hook.Add( "LambdaOnBeginMove", hooksPrefix .. "OnBeginMove", function( self, pos, isonnavmesh )
         local state = self:GetState()
-        if ( state != "Idle" and state != "FindTarget" ) or random( 1, 100 ) < 30 or !stickTogether:GetBool() then return end
+        if state != "Idle" and state != "FindTarget" then return end
 
-        local rndMember = self:GetRandomTeamMember()
-        if IsValid( rndMember ) then
-            local movePos = ( rndMember:GetPos() + VectorRand( -500, 500 ) )
-            if isonnavmesh then
-                local navarea = GetNavArea( movePos, 500 )
-                if IsValid( navarea ) then movePos = navarea:GetClosestPointOnArea( movePos ) end
+        local rndDecision = random( 1, 100 )
+        if rndDecision < 30 and stickTogether:GetBool() then
+            local rndMember = self:GetRandomTeamMember()
+            if IsValid( rndMember ) then
+                local movePos = ( rndMember:GetPos() + VectorRand( -500, 500 ) )
+                if isonnavmesh then
+                    local navarea = GetNavArea( movePos, 500 )
+                    if IsValid( navarea ) then movePos = navarea:GetClosestPointOnArea( movePos ) end
+                end
+                self:RecomputePath( movePos ) 
             end
-            self:RecomputePath( movePos ) 
+        elseif rndDecision > 60 and huntDown:GetBool() and attackOthers:GetBool() then
+            for _, v in RandomPairs( GetLambdaPlayers() ) do
+                if !v.l_Team or v:GetIsDead() or self:IsInMyTeam( v ) then continue end
+
+                local movePos = ( v:GetPos() + VectorRand( -500, 500 ) )
+                if isonnavmesh then
+                    local navarea = GetNavArea( movePos, 500 )
+                    if IsValid( navarea ) then movePos = navarea:GetClosestPointOnArea( movePos ) end
+                end
+
+                self:RecomputePath( movePos )
+                break
+            end
         end
     end )
     
@@ -135,18 +155,28 @@ if ( CLIENT ) then
     local teamNameTraceTbl = {}
     local TraceLine = util.TraceLine
     local GetLambdaPlayers = GetLambdaPlayers
-    local tobool = tobool
     local table_IsEmpty = table.IsEmpty
+    local AddHalo = halo.Add
 
-    local function OnGetDisplayColor( self, ply )
+    hook.Add( "LambdaGetDisplayColor", hooksPrefix .. "OnGetDisplayColor", function( self, ply )
         if self.l_TeamColor then return self.l_TeamColor end
-    end
+    end )
 
-    local function OnHUDPaint()
+    hook.Add( "PreDrawHalos", hooksPrefix .. "OnPreDrawHalos", function()
+        local plyTeam = LocalPlayer():GetInfo( "lambdaplayers_teams_myteam" )
+        if plyTeam == "" or !drawHalo:GetBool() then return end
+
+        for _, v in ipairs( GetLambdaPlayers() ) do
+            local vTeam = v.l_Team
+            if !vTeam or vTeam != plyTeam or v:GetIsDead() or !v:IsBeingDrawn() then continue end            
+            AddHalo( { v }, v:GetDisplayColor(), 3, 3, 1, true, false )
+        end
+    end )
+
+    hook.Add( "HUDPaint", hooksPrefix .. "OnHUDPaint", function()
         local ply = LocalPlayer()
-        local sw, sh = ScrW(), ScrH()
+        
         local traceEnt = ply:GetEyeTrace().Entity
-
         if LambdaIsValid( traceEnt ) and traceEnt.IsLambdaPlayer then
             local entTeam = traceEnt.l_Team
             if entTeam then 
@@ -155,35 +185,28 @@ if ( CLIENT ) then
                 local friendTbl = traceEnt.l_friends
                 local height = ( ( friendTbl and !table_IsEmpty( friendTbl ) ) and 1.68 or 1.78 )
 
-                DrawText( "Team: " .. entTeam, "lambdaplayers_displayname", ( sw / 2 ), ( sh / height ) + LambdaScreenScale( 1 + UIScale:GetFloat() ), color, TEXT_ALIGN_CENTER ) 
+                DrawText( "Team: " .. entTeam, "lambdaplayers_displayname", ( ScrW() / 2 ), ( ScrH() / height ) + LambdaScreenScale( 1 + UIScale:GetFloat() ), color, TEXT_ALIGN_CENTER ) 
             end
         end
 
         local plyTeam = ply:GetInfo( "lambdaplayers_teams_myteam" )
-        if plyTeam != "" and tobool( ply:GetInfo( "lambdaplayers_teams_displaymyteamname" ) ) then
-            local eyePos = ply:EyePos()
-            
-            teamNameTraceTbl.start = eyePos
-            teamNameTraceTbl.filter = { ply }
+        if plyTeam == "" or !drawTeamName:GetBool() then return end
 
-            for _, v in ipairs( GetLambdaPlayers() ) do
-                local vTeam = v.l_Team
-                if !vTeam or vTeam != plyTeam or v:GetIsDead() then continue end
+        teamNameTraceTbl.start = ply:EyePos()
+        teamNameTraceTbl.filter = { ply }
 
-                local textPos = ( v:GetPos() + v:GetUp() * 96 )
-                if textPos:DistToSqr( eyePos ) > ( 1000 * 1000 ) then continue end
+        for _, v in ipairs( GetLambdaPlayers() ) do
+            local vTeam = v.l_Team
+            if !vTeam or vTeam != plyTeam or v:GetIsDead() or !v:IsBeingDrawn() then continue end
 
-                teamNameTraceTbl.endpos = textPos
-                teamNameTraceTbl.filter[ 2 ] = v
-                if TraceLine( teamNameTraceTbl ).Hit then continue end
+            local textPos = ( v:GetPos() + v:GetUp() * 96 )
+            teamNameTraceTbl.endpos = textPos
+            teamNameTraceTbl.filter[ 2 ] = v
+            if TraceLine( teamNameTraceTbl ).Hit then continue end
 
-                local drawPos = textPos:ToScreen()
-                DrawText( plyTeam .. "'s Member", "lambdaplayers_displayname", drawPos.x, drawPos.y, v.l_TeamColor, TEXT_ALIGN_CENTER )
-            end
+            local drawPos = textPos:ToScreen()
+            DrawText( plyTeam .. "'s Member", "lambdaplayers_displayname", drawPos.x, drawPos.y, v.l_TeamColor, TEXT_ALIGN_CENTER )
         end
-    end
-
-    hook.Add( "HUDPaint", hooksPrefix .. "OnHUDPaint", OnHUDPaint )
-    hook.Add( "LambdaGetDisplayColor", hooksPrefix .. "OnGetDisplayColor", OnGetDisplayColor )
+    end )
 
 end
