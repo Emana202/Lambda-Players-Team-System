@@ -109,9 +109,9 @@ if ( SERVER ) then
         if rndDecision < 30 and stickTogether:GetBool() then
             local rndMember = self:GetRandomTeamMember()
             if IsValid( rndMember ) then
-                local movePos = ( rndMember:GetPos() + VectorRand( -500, 500 ) )
+                local movePos = ( rndMember:GetPos() + VectorRand( -400, 400 ) )
                 if isonnavmesh then
-                    local navarea = GetNavArea( movePos, 500 )
+                    local navarea = GetNavArea( movePos, 400 )
                     if IsValid( navarea ) then movePos = navarea:GetClosestPointOnArea( movePos ) end
                 end
                 self:RecomputePath( movePos ) 
@@ -120,9 +120,9 @@ if ( SERVER ) then
             for _, v in RandomPairs( GetLambdaPlayers() ) do
                 if !v.l_Team or v:GetIsDead() or self:IsInMyTeam( v ) then continue end
 
-                local movePos = ( v:GetPos() + VectorRand( -500, 500 ) )
+                local movePos = ( v:GetPos() + VectorRand( -300, 300 ) )
                 if isonnavmesh then
-                    local navarea = GetNavArea( movePos, 500 )
+                    local navarea = GetNavArea( movePos, 300 )
                     if IsValid( navarea ) then movePos = navarea:GetClosestPointOnArea( movePos ) end
                 end
 
