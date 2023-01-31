@@ -94,9 +94,9 @@ if ( SERVER ) then
         local attacker = dmginfo:GetAttacker()
         if !LambdaIsValid( attacker ) or attacker == self then return end
 
-        if self:IsInMyTeam( victim ) and self:CanTarget( attacker ) then
+        if self:IsInMyTeam( victim ) and self:CanTarget( attacker ) and ( self:IsInRange( attacker, 500 ) or self:CanSee( attacker ) ) then
             self:AttackTarget( attacker )
-        elseif self:IsInMyTeam( attacker ) and self:CanTarget( victim ) then
+        elseif self:IsInMyTeam( attacker ) and self:CanTarget( victim ) and ( self:IsInRange( victim, 500 ) or self:CanSee( victim ) ) then
             self:AttackTarget( victim )
         end
     end )
