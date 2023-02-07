@@ -64,10 +64,10 @@ if ( SERVER ) then
         if CurTime() <= self.l_NextEnemyTeamSearchT then return end
         self.l_NextEnemyTeamSearchT = CurTime() + 1.0
 
-        if !self.l_Team or self:GetState() == "Combat" or !attackOthers:GetBool() then return end
+        if !self.l_Team or self:GetState() == "Combat" and self:CanSee( self:GetEnemy() ) or !attackOthers:GetBool() then return end
 
         local surroundings = self:FindInSphere( nil, 2000, function( ent )
-            if !LambdaIsValid( ent ) or !self:CanTarget( ent ) then return end
+            if !LambdaIsValid( ent ) or !self:CanTarget( ent ) or !self:CanSee( ent ) then return end
             return ( ent.IsLambdaPlayer and ent.l_Team or ent:IsPlayer() and ent:GetInfo( "lambdaplayers_teams_myteam" ) != "" )
         end )
         if #surroundings == 0 then return end
