@@ -6,6 +6,7 @@ local file_Exists = file.Exists
 local table_Count = table.Count
 local team_SetUp = team.SetUp
 local net = net
+local ents_GetAll = ents.GetAll
 local ents_FindByClass = ents.FindByClass
 
 local modulePrefix = "Lambda_TeamSystem_"
@@ -33,21 +34,6 @@ if !file_Exists( "lambdaplayers/teamlist.json", "DATA" ) then
 end
 
 LambdaTeams = LambdaTeams or {}
-
-function LambdaTeams:GetTeamColor( teamName )
-    local data = LambdaTeams.TeamData[ teamName ]
-    return ( data and data.color )
-end
-
-function LambdaTeams:GetPlayerTeam( ply )
-    if IsValid( ply ) then
-        if ply:IsPlayer() then
-            local plyTeam = ply:GetInfo( "lambdaplayers_teamsystem_playerteam" )
-            return ( plyTeam != "" and plyTeam )
-        end
-        return ( ply.l_TeamName )
-    end
-end
 
 local function UpdateTeamDataList( dataTbl )
     LambdaTeams.TeamData = ( dataTbl or LAMBDAFS:ReadFile( "lambdaplayers/teamlist.json", "json" ) )
@@ -81,9 +67,11 @@ UpdateTeamDataList()
 local teamsEnabled  = CreateLambdaConvar( "lambdaplayers_teamsystem_enable", 0, true, false, false, "Enables the work of the module.", 0, 1, { name = "Enable Team System", type = "Bool", category = "Team System" } )
 local mwsTeam       = CreateLambdaConvar( "lambdaplayers_teamsystem_mws_spawnteam", "", true, false, false, "The team the newly spawned Lambda Players from MWS should be assigned into.", 0, 1, { name = "Spawn Team", type = "Combo", options = LambdaTeams.TeamOptionsRandom, category = "MWS" } )
 local incNoTeams    = CreateLambdaConvar( "lambdaplayers_teamsystem_mws_includenoteams", 0, true, false, false, "When spawning a Lambda Player from MWS with random team, should they also have a chance to spawn without being assigned to any team?", 0, 1, { name = "Include Neutral To Random Teams", type = "Bool", category = "MWS" }  )
+local mwsTeamLimit  = CreateLambdaConvar( "lambdaplayers_teamsystem_mws_teamlimit", 0, true, false, false, "The limit of how many members can be allowed to be assigned to each team. Set to zero for no limit.", 0, 50, { name = "Team Member Limit", type = "Slider", decimals = 0, category = "MWS" }  )
 CreateLambdaConvar( "lambdaplayers_teamsystem_lambdateam", "", true, true, true, "The team the newly spawned Lambda Players should be assigned into.", 0, 1, { name = "Lambda Team", type = "Combo", options = LambdaTeams.TeamOptionsRandom, category = "Team System" } )
 CreateLambdaConvar( "lambdaplayers_teamsystem_includenoteams", 0, true, true, true, "When spawning a Lambda Player with random team, should they also have a chance to spawn without being assigned to any team?", 0, 1, { name = "Include Neutral To Random Teams", type = "Bool", category = "Team System" }  )
-CreateLambdaConvar( "lambdaplayers_teamsystem_playerteam", "", true, true, true, "The lambda team you are currently assigned to.", 0, 1, { name = "Player Team", type = "Combo", options = LambdaTeams.TeamOptions, category = "Team System" }  )
+local playerTeam    = CreateLambdaConvar( "lambdaplayers_teamsystem_playerteam", "", true, true, true, "The lambda team you are currently assigned to.", 0, 1, { name = "Player Team", type = "Combo", options = LambdaTeams.TeamOptions, category = "Team System" }  )
+local teamLimit     = CreateLambdaConvar( "lambdaplayers_teamsystem_teamlimit", 0, true, false, false, "The limit of how many members can be allowed to be assigned to each team. Set to zero for no limit.", 0, 50, { name = "Team Member Limit", type = "Slider", decimals = 0, category = "Team System" }  )
 
 CreateLambdaConsoleCommand( "lambdaplayers_teamsystem_updateteamlist", function( ply ) 
     UpdateTeamDataList()
@@ -115,6 +103,51 @@ CreateLambdaConvar( "lambdaplayers_teamsystem_ctf_snd_onreturn", "lambdaplayers/
 
 ---
 
+function LambdaTeams:GetTeamColor( teamName, realColor )
+    local data = LambdaTeams.TeamData[ teamName ]
+    return ( data and data.color and ( !realColor and data.color or data.color:ToColor() ) )
+end
+
+function LambdaTeams:GetPlayerTeam( ply )
+    if !IsValid( ply ) then return end
+    local plyTeam = nil
+
+    if ply.IsLambdaPlayer then
+        if ( CLIENT ) then
+            plyTeam = ply:GetNW2String( "lambda_teamname" )
+            if !plyTeam or plyTeam == "" then plyTeam = ply:GetNWString( "lambda_teamname" ) end
+        else
+            plyTeam = ply.l_TeamName
+        end
+    elseif ply:IsPlayer() then
+        plyTeam = ( CLIENT and playerTeam:GetString() or ply:GetInfo( "lambdaplayers_teamsystem_playerteam" ) )
+    end
+
+    return ( plyTeam != "" and plyTeam )
+end
+
+function LambdaTeams:AreTeammates( ent, target )
+    if !IsValid( ent ) or !IsValid( target ) then return end
+
+    local entTeam = LambdaTeams:GetPlayerTeam( ent )
+    if !entTeam then return end
+
+    local targetTeam = LambdaTeams:GetPlayerTeam( target )
+    if !targetTeam then return end
+
+    return ( entTeam == targetTeam )
+end
+
+function LambdaTeams:GetTeamCount( teamName )
+    local count = 0
+    for _, v in ipairs( ents_GetAll() ) do
+        if LambdaTeams:GetPlayerTeam( v ) == teamName then count = count + 1 end
+    end
+    return count
+end
+
+---
+
 if ( SERVER ) then
 
     util.AddNetworkString( "lambda_teamsystem_playclientsound" )
@@ -124,11 +157,11 @@ if ( SERVER ) then
     local CurTime = CurTime
     local GetNavArea = navmesh.GetNavArea
     local VectorRand = VectorRand
-    local ents_GetAll = ents.GetAll
     local ignorePlys = GetConVar( "ai_ignoreplayers" )
     local RandomPairs = RandomPairs
     local table_Random = table.Random
     local timer_Simple = timer.Simple
+    local tobool = tobool
 
     net.Receive( "lambda_teamsystem_setplayerteam", function()
         local ply = net.ReadEntity()
@@ -145,8 +178,7 @@ if ( SERVER ) then
     end )
 
     net.Receive( "lambda_teamsystem_updateteamdatalist", function()
-        local dataTbl = util.JSONToTable( net.ReadString() )
-        UpdateTeamDataList( dataTbl )
+        UpdateTeamDataList()
     end )
 
     local function OnTeamSystemDisable( name, oldVal, newVal )
@@ -156,8 +188,10 @@ if ( SERVER ) then
                     local teamID = LambdaTeams.RealTeams[ ply.l_TeamName ]
                     if teamID and teamsEnabled:GetBool() and ply:GetTeam() == 0 then
                         ply:SetTeam( teamID )
+                        if ply.l_TeamColor then ply:SetPlyColor( ply.l_TeamColor:ToVector() ) end
                     elseif ply:GetTeam() != 0 then
                         ply:SetTeam( 0 )
+                        if ply.l_PlyNoTeamColor then ply:SetPlyColor( ply.l_PlyNoTeamColor ) end
                     end
                 elseif ply:IsPlayer() then
                     local teamID = LambdaTeams.RealTeams[ ply:GetInfo( "lambdaplayers_teamsystem_playerteam" ) ]
@@ -175,78 +209,87 @@ if ( SERVER ) then
     cvars.RemoveChangeCallback( "lambdaplayers_teamsystem_enable", modulePrefix .. "OnSystemChanged" )
     cvars.AddChangeCallback( "lambdaplayers_teamsystem_enable", OnTeamSystemDisable, modulePrefix .. "OnSystemChanged" )
 
-    local function SetLambdasTeam( lambda, teamName, rndNoTeams )
+    local function SetTeamToLambda( lambda, team, rndNoTeams, limit )
         if !teamsEnabled:GetBool() then return end
 
+        local teamTbl = LambdaTeams.TeamData
+        if limit and limit > 0 then
+            teamTbl = table.Copy( teamTbl )
+            PrintTable( teamTbl )
+            for k, _ in pairs( teamTbl ) do
+                if LambdaTeams:GetTeamCount( k ) < limit then continue end
+                teamTbl[ k ] = nil
+            end
+            PrintTable( teamTbl )
+        end
+
         local teamData
-        if teamName == "random" then
+        if team == "random" then
             if rndNoTeams then
-                local teamCount = table_Count( LambdaTeams.TeamData )
+                local teamCount = table_Count( teamTbl )
                 if random( 1, teamCount + 1 ) > teamCount then return end
             end
-            teamData = table_Random( LambdaTeams.TeamData )
+
+            teamData = table_Random( teamTbl )
         else
-            teamData = LambdaTeams.TeamData[ teamName ]
+            teamData = teamTbl[ team ]
         end
         if !teamData then return end
 
-        local teamName = teamData.name
-        lambda:SetExternalVar( "l_TeamName", teamName )
-        lambda:SetNW2String( "lambda_teamname", teamName )
-        lambda:SetNWString( "lambda_teamname", teamName )
+        local name = teamData.name
+        lambda:SetExternalVar( "l_TeamName", name )
+        lambda:SetNW2String( "lambda_teamname", name )
+        lambda:SetNWString( "lambda_teamname", name )
 
-        local teamColor = teamData.color
-        lambda:SetExternalVar( "l_TeamColor", teamColor:ToColor() )
-        lambda:SetPlyColor( teamColor )
-        lambda:SetNW2Vector( "lambda_teamcolor", teamColor )
-        lambda:SetNWVector( "lambda_teamcolor", teamColor )
+        local color = teamData.color
+        lambda:SetExternalVar( "l_TeamColor", color:ToColor() )
+        lambda:SetPlyColor( color )
+        lambda:SetNW2Vector( "lambda_teamcolor", color )
+        lambda:SetNWVector( "lambda_teamcolor", color )
 
-        local teamID = LambdaTeams.RealTeams[ teamName ]
+        local teamID = LambdaTeams.RealTeams[ name ]
         if teamID then lambda:SetTeam( teamID ) end
     end
 
     local function OnPlayerSpawnedNPC( ply, npc )
-        if npc.IsLambdaPlayer then SetLambdasTeam( npc, ply:GetInfo( "lambdaplayers_teamsystem_lambdateam" ), ply:GetInfo( "lambdaplayers_teamsystem_includenoteams" ) ) end
+        if !npc.IsLambdaPlayer then return end
+        SetTeamToLambda( npc, ply:GetInfo( "lambdaplayers_teamsystem_lambdateam" ), tobool( ply:GetInfo( "lambdaplayers_teamsystem_includenoteams" ) ), teamLimit:GetInt() )
     end
 
     local function LambdaOnInitialize( self )
-        if self.l_MWSspawned then SetLambdasTeam( self, mwsTeam:GetString(), incNoTeams:GetBool() ) end
-
-        function self:IsInMyTeam( ent )
-            local myTeam = self.l_TeamName
-            if !myTeam then return end
-
-            local entTeam = ( ent:IsPlayer() and ent:GetInfo( "lambdaplayers_teamsystem_playerteam" ) or ent.l_TeamName )
-            if !entTeam or entTeam == "" then return end
-
-            return ( entTeam == myTeam )
-        end
-
-        function self:GetRandomTeamMember()
-            if !self.l_TeamName then return NULL end
-            
-            for _, tm in RandomPairs( ents_GetAll() ) do
-                if tm != self and LambdaIsValid( tm ) and self:IsInMyTeam( tm ) == true and ( !tm:IsPlayer() or tm:Alive() and !ignorePlys:GetBool() ) then
-                    return tm
-                end
-            end
-        end
-
         self.l_NextEnemyTeamSearchT = CurTime() + 1.0
-        if self.l_TeamColor then self:SetPlyColor( self.l_TeamColor:ToVector() ) end
+        self:SetExternalVar( "l_PlyNoTeamColor", self:GetPlyColor() )
+
+        local ply = self:GetCreator()
+        timer_Simple( FrameTime() * 2, function()
+            if IsValid( ply ) then
+                self:SetExternalVar( "l_PlyNoTeamColor", self:GetPlyColor() )
+                SetTeamToLambda( self, ply:GetInfo( "lambdaplayers_teamsystem_lambdateam" ), tobool( ply:GetInfo( "lambdaplayers_teamsystem_includenoteams" ) ), teamLimit:GetInt() ) 
+            elseif self.l_MWSspawned then
+                self:SetExternalVar( "l_PlyNoTeamColor", self:GetPlyColor() )
+                SetTeamToLambda( self, mwsTeam:GetString(), incNoTeams:GetBool(), mwsTeamLimit:GetInt() )
+            end
+
+            if self.l_TeamColor then self:SetPlyColor( self.l_TeamColor:ToVector() ) end
+        end )
     end
 
     local function LambdaPostRecreated( self )
         if self.l_TeamName then
             self:SetNW2String( "lambda_teamname", self.l_TeamName )
             self:SetNWString( "lambda_teamname", self.l_TeamName )
-        end
 
-        if self.l_TeamColor then
-            self.l_TeamColor = Color( self.l_TeamColor.r, self.l_TeamColor.g, self.l_TeamColor.b )
-            self:SetPlyColor( self.l_TeamColor:ToVector() )
-            self:SetNW2Vector( "lambda_teamcolor", self.l_TeamColor:ToVector() )
-            self:SetNWVector( "lambda_teamcolor", self.l_TeamColor:ToVector() )
+            if self.l_TeamColor then
+                self.l_TeamColor = Color( self.l_TeamColor.r, self.l_TeamColor.g, self.l_TeamColor.b )
+                self:SetNW2Vector( "lambda_teamcolor", self.l_TeamColor:ToVector() )
+                self:SetNWVector( "lambda_teamcolor", self.l_TeamColor:ToVector() )
+
+                if self.l_PlyNoTeamColor and !teamsEnabled:GetBool() then
+                    self:SetPlyColor( self.l_PlyNoTeamColor )
+                else
+                    self:SetPlyColor( self.l_TeamColor:ToVector() )
+                end
+            end
         end
     end
 
@@ -256,11 +299,19 @@ if ( SERVER ) then
         if CurTime() > self.l_NextEnemyTeamSearchT then
             self.l_NextEnemyTeamSearchT = CurTime() + 1.0
 
-            if self.l_TeamName and ( !self:InCombat() or !self:CanSee( self:GetEnemy() ) ) and attackOthers:GetBool() then
+            local ene = self:GetEnemy()
+            local kothEnt = self.l_KOTH_Entity
+            if ( self.l_TeamName and attackOthers:GetBool() or IsValid( kothEnt ) ) and ( !self:InCombat() or !self:CanSee( ene ) ) then
                 local surroundings = self:FindInSphere( nil, 2000, function( ent )
-                    return ( LambdaIsValid( ent ) and self:CanTarget( ent ) and self:IsInMyTeam( ent ) == false and ( !IsValid( self:GetEnemy() ) or self:GetRangeSquaredTo( ent ) < self:GetRangeSquaredTo( self:GetEnemy() ) ) and self:CanSee( ent ) )
+                    if LambdaIsValid( ent ) and ( !LambdaIsValid( ene ) or self:GetRangeSquaredTo( ent ) < self:GetRangeSquaredTo( ene ) ) and self:CanSee( ent ) then
+                        local areTeammates = LambdaTeams:AreTeammates( self, ent )
+                        return ( self:CanTarget( ent ) and ( areTeammates == false or IsValid( kothEnt ) and areTeammates != true and kothEnt == ent.l_KOTH_Entity and ( ent:IsInRange( kothEnt, 500 ) or kothEnt:GetCapturerName() == ent:Nick() ) ) )
+                    end
                 end )
-                if #surroundings > 0 then self:AttackTarget( surroundings[ random( #surroundings ) ] ) end
+
+                if #surroundings > 0 then 
+                    self:AttackTarget( surroundings[ random( #surroundings ) ] ) 
+                end
             end
         end
 
@@ -276,14 +327,14 @@ if ( SERVER ) then
     end
     
     local function LambdaCanTarget( self, ent )
-        if teamsEnabled:GetBool() and self:IsInMyTeam( ent ) == true then return true end
+        if teamsEnabled:GetBool() and LambdaTeams:AreTeammates( self, ent ) then return true end
     end
     
     local function LambdaOnInjured( self, dmginfo )
         if !self.l_TeamName or !teamsEnabled:GetBool() then return end
 
         local attacker = dmginfo:GetAttacker()
-        if attacker == self or !IsValid( attacker ) or self:IsInMyTeam( attacker ) != true then return end
+        if attacker == self or !IsValid( attacker ) or !LambdaTeams:AreTeammates( self, attacker ) then return end
 
         if noFriendFire:GetBool() then return true end
     end
@@ -294,53 +345,18 @@ if ( SERVER ) then
         local attacker = dmginfo:GetAttacker()
         if attacker == self or !LambdaIsValid( attacker ) then return end
 
-        if self:IsInMyTeam( victim ) == true and self:CanTarget( attacker ) and ( self:IsInRange( attacker, 500 ) or self:CanSee( attacker ) ) then
+        if LambdaTeams:AreTeammates( self, victim ) and self:CanTarget( attacker ) and ( self:IsInRange( attacker, 500 ) or self:CanSee( attacker ) ) then
             self:AttackTarget( attacker )
-        elseif self:IsInMyTeam( attacker ) == true and self:CanTarget( victim ) and ( self:IsInRange( victim, 500 ) or self:CanSee( victim ) ) then
+        elseif LambdaTeams:AreTeammates( self, attacker ) and self:CanTarget( victim ) and ( self:IsInRange( victim, 500 ) or self:CanSee( victim ) ) then
             self:AttackTarget( victim )
         end
     end
     
     local function LambdaOnBeginMove( self, pos )
-        if !self.l_TeamName or !teamsEnabled:GetBool() then return end
+        if !teamsEnabled:GetBool() then return end
 
         local state = self:GetState()
         if state != "Idle" and state != "FindTarget" then return end
-
-        local validFlags, validZones = {}, {}
-        for _, flag in ipairs( ents_FindByClass( "lambda_ctf_flag" ) ) do
-            if flag:GetTeamName() == self.l_TeamName then 
-                validZones[ #validZones + 1 ] = flag.CaptureZone
-
-                if ( !flag.IsAtHome or random( 1, 5 ) == 1 and !flag:GetIsCaptureZone() ) then
-                    validFlags[ #validFlags + 1 ] = flag
-                end
-            elseif !flag:GetIsCaptureZone() then
-                validFlags[ #validFlags + 1 ] = flag
-            end
-        end
-
-        if !self.l_HasFlag then
-            if #validFlags > 0 then
-                if !IsValid( self.l_CTF_Flag ) or random( 1, 3 ) == 1 then
-                    self.l_CTF_Flag = validFlags[ random( #validFlags ) ]
-                end
-                
-                self:SetRun( true )
-                self:RecomputePath( self.l_CTF_Flag:GetPos() + Vector( random( -50, 50 ), random( -50, 50 ), 0 ) )
-                
-                return
-            end
-        elseif #validZones > 0 then
-            if !IsValid( self.l_CTF_CaptureZone ) or random( 1, 4 ) == 1 then
-                self.l_CTF_CaptureZone = validZones[ random( #validZones ) ]
-            end
-           
-            self:SetRun( true )
-            self:RecomputePath( self.l_CTF_CaptureZone:GetPos() + Vector( random( -50, 50 ), random( -50, 50 ), 0 ) )
-
-            return
-        end
 
         if !IsValid( self.l_KOTH_Entity ) or random( 1, 10 ) == 1 then
             local kothEnts = ents_FindByClass( "lambda_koth_point" )
@@ -349,30 +365,69 @@ if ( SERVER ) then
 
         if IsValid( self.l_KOTH_Entity ) then
             local area = GetNavArea( self.l_KOTH_Entity:GetPos(), 500 )
-            self:SetRun( true )
+            self:SetRun( random( 1, 2 ) == 1 and !self:IsInRange( self.l_KOTH_Entity, 500 ) )
             self:RecomputePath( IsValid( area ) and area:GetRandomPoint() or ( self.l_KOTH_Entity:GetPos() + VectorRand( -500, 500 ) ) )
             return
         end
 
-        local rndDecision = random( 1, 100 )
-        if rndDecision < 30 and stickTogether:GetBool() then
-            local rndMember = self:GetRandomTeamMember()
-            if IsValid( rndMember ) then
-                local movePos = ( rndMember:GetPos() + VectorRand( -400, 400 ) )
-                local area = GetNavArea( movePos, 400 )
-                if IsValid( area ) then movePos = area:GetClosestPointOnArea( movePos ) end
+        if self.l_TeamName then
+            local validFlags, validZones = {}, {}
+            for _, flag in ipairs( ents_FindByClass( "lambda_ctf_flag" ) ) do
+                if flag:GetTeamName() == self.l_TeamName then 
+                    validZones[ #validZones + 1 ] = flag.CaptureZone
 
-                self:RecomputePath( movePos ) 
+                    if ( !flag.IsAtHome or random( 1, 5 ) == 1 and !flag:GetIsCaptureZone() ) then
+                        validFlags[ #validFlags + 1 ] = flag
+                    end
+                elseif !flag:GetIsCaptureZone() then
+                    validFlags[ #validFlags + 1 ] = flag
+                end
             end
-        elseif rndDecision > 70 and huntDown:GetBool() and attackOthers:GetBool() then
-            for _, ene in RandomPairs( ents_GetAll() ) do
-                if LambdaIsValid( ene ) and self:IsInMyTeam( ene ) == false and self:CanTarget( ene ) then
-                    local movePos = ( ene:GetPos() + VectorRand( -300, 300 ) )
-                    local area = GetNavArea( movePos, 300 )
-                    if IsValid( area ) then movePos = area:GetClosestPointOnArea( movePos ) end
 
-                    self:RecomputePath( movePos )
-                    break
+            if !self.l_HasFlag then
+                if #validFlags > 0 then
+                    if !IsValid( self.l_CTF_Flag ) or random( 1, 3 ) == 1 then
+                        self.l_CTF_Flag = validFlags[ random( #validFlags ) ]
+                    end
+                    
+                    self:SetRun( random( 1, 2 ) == 1 )
+                    self:RecomputePath( self.l_CTF_Flag:GetPos() + Vector( random( -50, 50 ), random( -50, 50 ), 0 ) )
+                    
+                    return
+                end
+            elseif #validZones > 0 then
+                if !IsValid( self.l_CTF_CaptureZone ) or random( 1, 4 ) == 1 then
+                    self.l_CTF_CaptureZone = validZones[ random( #validZones ) ]
+                end
+               
+                self:SetRun( true )
+                self:RecomputePath( self.l_CTF_CaptureZone:GetPos() + Vector( random( -50, 50 ), random( -50, 50 ), 0 ) )
+
+                return
+            end
+
+            local rndDecision = random( 1, 100 )
+            if rndDecision < 30 and stickTogether:GetBool() then
+                for _, ent in RandomPairs( ents_GetAll() ) do
+                    if ent != self and LambdaTeams:AreTeammates( self, ent ) and ent:Alive() and ( !ent:IsPlayer() or !ignorePlys:GetBool() ) then
+                        local movePos = ( ent:GetPos() + VectorRand( -400, 400 ) )
+                        local area = GetNavArea( movePos, 400 )
+                        if IsValid( area ) then movePos = area:GetClosestPointOnArea( movePos ) end
+
+                        self:RecomputePath( movePos )
+                        break 
+                    end
+                end
+            elseif rndDecision > 70 and huntDown:GetBool() and attackOthers:GetBool() then
+                for _, ent in RandomPairs( ents_GetAll() ) do
+                    if ent != self and LambdaTeams:AreTeammates( self, ent ) == false and ent:Alive() and self:CanTarget( ent ) then
+                        local movePos = ( ent:GetPos() + VectorRand( -300, 300 ) )
+                        local area = GetNavArea( movePos, 300 )
+                        if IsValid( area ) then movePos = area:GetClosestPointOnArea( movePos ) end
+
+                        self:RecomputePath( movePos )
+                        break
+                    end
                 end
             end
         end
@@ -415,29 +470,29 @@ if ( CLIENT ) then
 
     local LocalPlayer = LocalPlayer
     local GetConVar = GetConVar
-    local PlaySound = surface.PlaySound
+    local PlayClientSound = surface.PlaySound
     local file_Find = file.Find
     local string_Replace = string.Replace
     local string_EndsWith = string.EndsWith
-    local plyTeam = GetConVar( "lambdaplayers_teamsystem_playerteam" )
     local DrawText = draw.DrawText
     local SimpleTextOutlined = draw.SimpleTextOutlined
-    local UIScale = GetConVar( "lambdaplayers_uiscale" )
     local ScrW = ScrW
     local ScrH = ScrH
-    local teamNameTraceTbl = {}
     local TraceLine = util.TraceLine
-    local GetLambdaPlayers = GetLambdaPlayers
     local table_IsEmpty = table.IsEmpty
     local AddHalo = halo.Add
-    local vgui = vgui
-    local SortedPairs = SortedPairs
+    local CreateVGUI = vgui.Create
+    local spairs = SortedPairs
     local AddTextChat = chat.AddText
+    local DermaMenu = DermaMenu
+
     local defTeamClr = Vector( 1, 1, 1 )
+    local teamNameTraceTbl = { filter = { NULL, NULL } }
+    local uiScale = GetConVar( "lambdaplayers_uiscale" )
 
     net.Receive( "lambda_teamsystem_playclientsound", function()
-        local myTeam = plyTeam:GetString()
-        if myTeam == "" then return end
+        local plyTeam = playerTeam:GetString()
+        if plyTeam == "" then return end
 
         local cvarName = net.ReadString()
         if !cvarName or cvarName == "" then return end
@@ -445,8 +500,8 @@ if ( CLIENT ) then
         local teamBased = net.ReadBool()
         if teamBased then
             local targetTeam, attackTeam = net.ReadString(), net.ReadString()
-            if myTeam != targetTeam and attackTeam != myTeam then return end
-            cvarName = cvarName .. ( myTeam != targetTeam and "ally" or "enemy" )
+            if plyTeam != targetTeam and attackTeam != plyTeam then return end
+            cvarName = cvarName .. ( plyTeam != targetTeam and "ally" or "enemy" )
         end
 
         local cvar = GetConVar( cvarName )
@@ -460,7 +515,7 @@ if ( CLIENT ) then
             sndPath = string_Replace( sndPath .. dirFiles[ random( #dirFiles ) ], "*", "" )
         end
 
-        PlaySound( sndPath )
+        PlayClientSound( sndPath )
     end )
 
     local function OnPlayerLambdaTeamChanged( name, oldVal, newVal )
@@ -472,12 +527,6 @@ if ( CLIENT ) then
     cvars.RemoveChangeCallback( "lambdaplayers_teamsystem_playerteam", modulePrefix .. "OnPlayerLambdaTeamChanged" )
     cvars.AddChangeCallback( "lambdaplayers_teamsystem_playerteam", OnPlayerLambdaTeamChanged, modulePrefix .. "OnPlayerLambdaTeamChanged" )
 
-    local function GetLambdaTeamName( self )
-        local tName = self:GetNW2String( "lambda_teamname" )
-        if !tName or tName == "" then tName = self:GetNWString( "lambda_teamname" ) end
-        return tName
-    end
-
     local function GetLambdaTeamColor( self )
         local colorvec = self:GetNW2Vector( "lambda_teamcolor", false )
         if !colorvec then colorvec = self:GetNWVector( "lambda_teamcolor" ) end
@@ -485,53 +534,53 @@ if ( CLIENT ) then
     end
 
     local function LambdaGetDisplayColor( self )
-        if teamsEnabled:GetBool() and GetLambdaTeamName( self ) != "" then return GetLambdaTeamColor( self ) end
+        local teamName = LambdaTeams:GetPlayerTeam( self )
+        if teamName and teamsEnabled:GetBool() then return LambdaTeams:GetTeamColor( teamName, true ) end
     end
 
     local function OnPreDrawHalos()
-        local myTeam = plyTeam:GetString()
-        if myTeam == "" or !drawHalo:GetBool() or !teamsEnabled:GetBool() then return end
+        local plyTeam = playerTeam:GetString()
+        if plyTeam == "" or !drawHalo:GetBool() or !teamsEnabled:GetBool() then return end
 
-        for _, tm in ipairs( GetLambdaPlayers() ) do
-            local tmTeam = GetLambdaTeamName( tm )
-            if tmTeam == "" or tmTeam != myTeam or tm:GetIsDead() or !tm:IsBeingDrawn() then continue end            
-            AddHalo( { tm }, GetLambdaTeamColor( tm ), 3, 3, 1, true, false )
+        for _, ent in ipairs( GetLambdaPlayers() ) do
+            local entTeam = LambdaTeams:GetPlayerTeam( ent )
+            if entTeam and entTeam == plyTeam and !ent:GetIsDead() and ent:IsBeingDrawn() then
+                AddHalo( { ent }, LambdaTeams:GetTeamColor( entTeam, true ), 3, 3, 1, true, false )
+            end
         end
     end
 
     local function OnHUDPaint()
-        if teamsEnabled:GetBool() then
-            local ply = LocalPlayer()
+        if !teamsEnabled:GetBool() then return end
+        local ply = LocalPlayer()
             
-            local traceEnt = ply:GetEyeTrace().Entity
-            if LambdaIsValid( traceEnt ) and traceEnt.IsLambdaPlayer then
-                local entTeam = GetLambdaTeamName( traceEnt )
-                if entTeam != "" then 
-                    local color = GetLambdaTeamColor( traceEnt )
-                    
-                    local friendTbl = traceEnt.l_friends
-                    local height = ( ( friendTbl and !table_IsEmpty( friendTbl ) ) and 1.68 or 1.78 )
-
-                    DrawText( "Team: " .. entTeam, "lambdaplayers_displayname", ( ScrW() / 2 ), ( ScrH() / height ) + LambdaScreenScale( 1 + UIScale:GetFloat() ), color, TEXT_ALIGN_CENTER ) 
-                end
+        local traceEnt = ply:GetEyeTrace().Entity
+        if LambdaIsValid( traceEnt ) and traceEnt.IsLambdaPlayer then
+            local entTeam = LambdaTeams:GetPlayerTeam( traceEnt )
+            if entTeam then 
+                local friendTbl = traceEnt.l_friends
+                local height = ( ( friendTbl and !table_IsEmpty( friendTbl ) ) and 1.68 or 1.78 )
+                
+                DrawText( "Team: " .. entTeam, "lambdaplayers_displayname", ( ScrW() / 2 ), ( ScrH() / height ) + LambdaScreenScale( 1 + uiScale:GetFloat() ), LambdaTeams:GetTeamColor( entTeam, true ), TEXT_ALIGN_CENTER ) 
             end
+        end
 
-            local myTeam = plyTeam:GetString()
-            if myTeam == "" or !drawTeamName:GetBool() then return end
+        local plyTeam = playerTeam:GetString()
+        if plyTeam == "" or !drawTeamName:GetBool() then return end
 
-            teamNameTraceTbl.start = ply:EyePos()
-            teamNameTraceTbl.filter = { ply }
+        teamNameTraceTbl.start = ply:EyePos()
+        teamNameTraceTbl.filter[ 1 ] = ply
 
-            for _, tm in ipairs( GetLambdaPlayers() ) do
-                local tmTeam = GetLambdaTeamName( tm )
-                if tmTeam != "" and tmTeam == myTeam and !tm:GetIsDead() and tm:IsBeingDrawn() then
-                    local textPos = ( tm:GetPos() + tm:GetUp() * 96 )
-                    teamNameTraceTbl.endpos = textPos
-                    teamNameTraceTbl.filter[ 2 ] = tm
-                    if !TraceLine( teamNameTraceTbl ).Hit then
-                        local drawPos = textPos:ToScreen()
-                        DrawText( myTeam .. "'s Member", "lambdaplayers_displayname", drawPos.x, drawPos.y, GetLambdaTeamColor( tm ), TEXT_ALIGN_CENTER )
-                    end
+        for _, ent in ipairs( GetLambdaPlayers() ) do
+            local entTeam = LambdaTeams:GetPlayerTeam( ent )
+            if entTeam and entTeam == plyTeam and !ent:GetIsDead() and ent:IsBeingDrawn() then
+                local textPos = ( ent:GetPos() + ent:GetUp() * 96 )
+                teamNameTraceTbl.endpos = textPos
+                teamNameTraceTbl.filter[ 2 ] = ent
+                
+                if !TraceLine( teamNameTraceTbl ).Hit then
+                    local drawPos = textPos:ToScreen()
+                    DrawText( entTeam .. "'s Member", "lambdaplayers_displayname", drawPos.x, drawPos.y, LambdaTeams:GetTeamColor( entTeam, true ), TEXT_ALIGN_CENTER )
                 end
             end
         end
@@ -550,7 +599,7 @@ if ( CLIENT ) then
         leftpanel:SetSize( 175, 200 )
         leftpanel:Dock( LEFT )
 
-        local teamlist = vgui.Create( "DListView", leftpanel )
+        local teamlist = CreateVGUI( "DListView", leftpanel )
         teamlist:Dock( FILL )
         teamlist:AddColumn( "Teams", 1 )
 
@@ -559,7 +608,7 @@ if ( CLIENT ) then
 
         local jsonFile = LAMBDAFS:ReadFile( "lambdaplayers/teamlist.json", "json" )
         if jsonFile then
-            for k, v in SortedPairs( jsonFile ) do
+            for k, v in spairs( jsonFile ) do
                 local line = teamlist:AddLine( k )
                 line:SetSortValue( 1, v )
             end
@@ -577,7 +626,7 @@ if ( CLIENT ) then
 
         function teamlist:DoDoubleClick( id, line )
             ImportTeam( line:GetSortValue( 1 ) )
-            PlaySound( "buttons/button15.wav" )
+            PlayClientSound( "buttons/button15.wav" )
         end
 
         function teamlist:OnRowRightClick( id, line )
@@ -585,10 +634,14 @@ if ( CLIENT ) then
             local conmenu = DermaMenu( false, leftpanel )
 
             conmenu:AddOption( "Delete " .. info.name .. "?", function()
-                LAMBDAFS:RemoveVarFromKVFile( "lambdaplayers/teamlist.json", info.name, "json" )
-                PlaySound( "buttons/button15.wav" )
-                AddTextChat( "Deleted " .. info.name .. " from your Team List.")
                 teamlist:RemoveLine( id )
+                AddTextChat( "Deleted " .. info.name .. " from your Team List.")
+                PlayClientSound( "buttons/button15.wav" )
+                
+                LAMBDAFS:RemoveVarFromKVFile( "lambdaplayers/teamlist.json", info.name, "json" )
+                UpdateTeamDataList()
+                net.Start( "lambda_teamsystem_updateteamdatalist" )
+                net.SendToServer()
             end )
             conmenu:AddOption( "Cancel", function() end )
         end
@@ -608,23 +661,20 @@ if ( CLIENT ) then
             if !compiledinfo then return end
 
             AddTextChat( "Saved " .. compiledinfo.name .. " to your Team List!" )
-            PlaySound( "buttons/button15.wav" )
+            PlayClientSound( "buttons/button15.wav" )
 
             UpdateTeamLine( compiledinfo.name, compiledinfo, true )
             
-            local jsonTbl = { [ compiledinfo.name ] = compiledinfo }
-            LAMBDAFS:UpdateKeyValueFile( "lambdaplayers/teamlist.json", jsonTbl, "json" ) 
-            
-            UpdateTeamDataList( jsonTbl )
+            LAMBDAFS:UpdateKeyValueFile( "lambdaplayers/teamlist.json", { [ compiledinfo.name ] = compiledinfo }, "json" ) 
+            UpdateTeamDataList()
             net.Start( "lambda_teamsystem_updateteamdatalist" )
-                net.WriteString( util.TableToJSON( jsonTbl ) )
             net.SendToServer()
         end )
 
         CompileSettings = function()
             if teamname:GetText() == "" then 
                 AddTextChat( "No name is set for this team!" ) 
-                PlaySound( "buttons/button10.wav" )
+                PlayClientSound( "buttons/button10.wav" )
                 return 
             end
 
