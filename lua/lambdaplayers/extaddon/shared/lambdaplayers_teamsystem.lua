@@ -35,8 +35,8 @@ end
 
 LambdaTeams = LambdaTeams or {}
 
-local function UpdateTeamDataList( dataTbl )
-    LambdaTeams.TeamData = ( dataTbl or LAMBDAFS:ReadFile( "lambdaplayers/teamlist.json", "json" ) )
+function LambdaTeams:UpdateData()
+    LambdaTeams.TeamData = LAMBDAFS:ReadFile( "lambdaplayers/teamlist.json", "json" )
     LambdaTeams.RealTeams = LambdaTeams.RealTeams or {}
     LambdaTeams.RealTeamCount = LambdaTeams.RealTeamCount or 0
 
@@ -60,7 +60,8 @@ local function UpdateTeamDataList( dataTbl )
         end
     end
 end
-UpdateTeamDataList()
+
+LambdaTeams:UpdateData()
 
 ---
 
@@ -69,12 +70,10 @@ local mwsTeam       = CreateLambdaConvar( "lambdaplayers_teamsystem_mws_spawntea
 local incNoTeams    = CreateLambdaConvar( "lambdaplayers_teamsystem_mws_includenoteams", 0, true, false, false, "When spawning a Lambda Player from MWS with random team, should they also have a chance to spawn without being assigned to any team?", 0, 1, { name = "Include Neutral To Random Teams", type = "Bool", category = "MWS" }  )
 local mwsTeamLimit  = CreateLambdaConvar( "lambdaplayers_teamsystem_mws_teamlimit", 0, true, false, false, "The limit of how many members can be allowed to be assigned to each team. Set to zero for no limit.", 0, 50, { name = "Team Member Limit", type = "Slider", decimals = 0, category = "MWS" }  )
 CreateLambdaConvar( "lambdaplayers_teamsystem_lambdateam", "", true, true, true, "The team the newly spawned Lambda Players should be assigned into.", 0, 1, { name = "Lambda Team", type = "Combo", options = LambdaTeams.TeamOptionsRandom, category = "Team System" } )
-CreateLambdaConvar( "lambdaplayers_teamsystem_includenoteams", 0, true, true, true, "When spawning a Lambda Player with random team, should they also have a chance to spawn without being assigned to any team?", 0, 1, { name = "Include Neutral To Random Teams", type = "Bool", category = "Team System" }  )
 local playerTeam    = CreateLambdaConvar( "lambdaplayers_teamsystem_playerteam", "", true, true, true, "The lambda team you are currently assigned to.", 0, 1, { name = "Player Team", type = "Combo", options = LambdaTeams.TeamOptions, category = "Team System" }  )
-local teamLimit     = CreateLambdaConvar( "lambdaplayers_teamsystem_teamlimit", 0, true, false, false, "The limit of how many members can be allowed to be assigned to each team. Set to zero for no limit.", 0, 50, { name = "Team Member Limit", type = "Slider", decimals = 0, category = "Team System" }  )
 
 CreateLambdaConsoleCommand( "lambdaplayers_teamsystem_updateteamlist", function( ply ) 
-    UpdateTeamDataList()
+    LambdaTeams:UpdateData()
 
     for _, v in ipairs( _LAMBDAConVarSettings ) do
         if v.name == "Player Team" then v.options = LambdaTeams.TeamOptions end
@@ -82,8 +81,10 @@ CreateLambdaConsoleCommand( "lambdaplayers_teamsystem_updateteamlist", function(
     end
 
     ply:ConCommand( "spawnmenu_reload" )
-end, true, "Refreshes the team list. Use this after adding or removing teams in the panel.", { name = "Refresh Team List", category = "Team System" } )
+end, true, "Refreshes the team list. Use this after editting teams in the team panel.", { name = "Refresh Team List", category = "Team System" } )
 
+CreateLambdaConvar( "lambdaplayers_teamsystem_includenoteams", 0, true, true, true, "When spawning a Lambda Player with random team, should they also have a chance to spawn without being assigned to any team?", 0, 1, { name = "Include Neutral To Random Teams", type = "Bool", category = "Team System" }  )
+local teamLimit     = CreateLambdaConvar( "lambdaplayers_teamsystem_teamlimit", 0, true, false, false, "The limit of how many members can be allowed to be assigned to each team. Set to zero for no limit.", 0, 50, { name = "Team Member Limit", type = "Slider", decimals = 0, category = "Team System" }  )
 local attackOthers  = CreateLambdaConvar( "lambdaplayers_teamsystem_attackotherteams", 0, true, false, false, "If Lambda Players should immediately start attacking the members of other teams at their sight.", 0, 1, { name = "Attack On Sight", type = "Bool", category = "Team System" } )
 local noFriendFire  = CreateLambdaConvar( "lambdaplayers_teamsystem_nofriendlyfire", 1, true, false, false, "If Lambda Players shouldn't be able to damage their teammates.", 0, 1, { name = "No Friendly Fire", type = "Bool", category = "Team System" } )
 local stickTogether = CreateLambdaConvar( "lambdaplayers_teamsystem_sticktogether", 1, true, false, false, "If Lambda Players should stick together with their teammates.", 0, 1, { name = "Stick Together", type = "Bool", category = "Team System" } )
@@ -152,7 +153,6 @@ if ( SERVER ) then
 
     util.AddNetworkString( "lambda_teamsystem_playclientsound" )
     util.AddNetworkString( "lambda_teamsystem_setplayerteam" )
-    util.AddNetworkString( "lambda_teamsystem_updateteamdatalist" )
 
     local CurTime = CurTime
     local GetNavArea = navmesh.GetNavArea
@@ -175,10 +175,6 @@ if ( SERVER ) then
             ply:SetTeam( 1001 )
             ply.l_IsInLambdaTeam = false
         end
-    end )
-
-    net.Receive( "lambda_teamsystem_updateteamdatalist", function()
-        UpdateTeamDataList()
     end )
 
     local function OnTeamSystemDisable( name, oldVal, newVal )
@@ -485,6 +481,8 @@ if ( CLIENT ) then
     local spairs = SortedPairs
     local AddTextChat = chat.AddText
     local DermaMenu = DermaMenu
+    local table_Merge = table.Merge
+    local table_Empty = table.Empty
 
     local defTeamClr = Vector( 1, 1, 1 )
     local teamNameTraceTbl = { filter = { NULL, NULL } }
@@ -604,23 +602,28 @@ if ( CLIENT ) then
         teamlist:AddColumn( "Teams", 1 )
 
         local CompileSettings
-        local ImportProfile
+        local ImportTeam
+        local teams = {}
 
-        local jsonFile = LAMBDAFS:ReadFile( "lambdaplayers/teamlist.json", "json" )
-        if jsonFile then
-            for k, v in spairs( jsonFile ) do
-                local line = teamlist:AddLine( k )
+        local localTeams = LAMBDAFS:ReadFile( "lambdaplayers/teamlist.json", "json" )
+        if localTeams then
+            for k, v in spairs( localTeams ) do
+                local line = teamlist:AddLine( k .. " | Local" )
+                line.l_isteamlocal = true
                 line:SetSortValue( 1, v )
             end
+
+            table_Merge( teams, localTeams )
         end
 
-        local function UpdateTeamLine( name, newinfo )
+        local function UpdateTeamLine( teamname, newinfo, islocal )
             for _, v in ipairs( teamlist:GetLines() ) do
                 local info = v:GetSortValue( 1 )
-                if info.name == name then v:SetSortValue( 1, newinfo ) return end
+                if info.name == teamname then v:SetSortValue( 1, newinfo ) return end
             end
 
-            local line = teamlist:AddLine( newinfo.name )
+            local line = teamlist:AddLine( teamname .. ( islocal and " | Local" or " | SERVER" ) )
+            line.l_isteamlocal = islocal
             line:SetSortValue( 1, newinfo )
         end
 
@@ -630,18 +633,20 @@ if ( CLIENT ) then
         end
 
         function teamlist:OnRowRightClick( id, line )
-            local info = line:GetSortValue( 1 )
             local conmenu = DermaMenu( false, leftpanel )
+            local info = line:GetSortValue( 1 )
 
             conmenu:AddOption( "Delete " .. info.name .. "?", function()
-                teamlist:RemoveLine( id )
-                AddTextChat( "Deleted " .. info.name .. " from your Team List.")
+                if line.l_isteamlocal then
+                    LAMBDAFS:RemoveVarFromKVFile( "lambdaplayers/teamlist.json", info.name, "json" ) 
+                    AddTextChat( "Deleted " .. info.name .. " from the your Team List.")
+                else
+                    LAMBDAPANELS:RemoveVarFromKVFile( "lambdaplayers/teamlist.json", info.name, "json" ) 
+                    AddTextChat( "Deleted " .. info.name .. " from the Server's Team List.")
+                end
+
                 PlayClientSound( "buttons/button15.wav" )
-                
-                LAMBDAFS:RemoveVarFromKVFile( "lambdaplayers/teamlist.json", info.name, "json" )
-                UpdateTeamDataList()
-                net.Start( "lambda_teamsystem_updateteamdatalist" )
-                net.SendToServer()
+                teamlist:RemoveLine( id )
             end )
             conmenu:AddOption( "Cancel", function() end )
         end
@@ -650,26 +655,59 @@ if ( CLIENT ) then
         rightpanel:SetSize( 310, 200 )
         rightpanel:Dock( RIGHT )
 
-        LAMBDAPANELS:CreateLabel( "Team Name", rightpanel, TOP )
-        local teamname = LAMBDAPANELS:CreateTextEntry( rightpanel, TOP, "Enter the team's name here" )
+        LAMBDAPANELS:CreateButton( rightpanel, BOTTOM, "Save To Server", function()
+            if !LocalPlayer():IsSuperAdmin() then chat.AddText( "You must be a Super Admin to save teams to the Server!" ) return end
+            local compiledinfo = CompileSettings()
+            if !compiledinfo then return end
 
-        LAMBDAPANELS:CreateLabel( "Team Color", rightpanel, TOP )
-        local teamcolor = LAMBDAPANELS:CreateColorMixer( rightpanel, TOP )
+            AddTextChat( "Saved " .. compiledinfo.name .. " to the Server's Team List!" )
+            PlayClientSound( "buttons/button15.wav" )
+
+            local line = teamlist:AddLine( compiledinfo.name .. " | Server" )
+            line.l_isteamlocal = false
+            line:SetSortValue( 1, compiledinfo )
+
+            UpdateTeamLine( compiledinfo.name, compiledinfo, true )
+            LAMBDAPANELS:UpdateKeyValueFile( "lambdaplayers/teamlist.json", { [ compiledinfo.name ] = compiledinfo }, "json" )
+        end )
 
         LAMBDAPANELS:CreateButton( rightpanel, BOTTOM, "Save Team", function()
             local compiledinfo = CompileSettings()
             if !compiledinfo then return end
 
-            AddTextChat( "Saved " .. compiledinfo.name .. " to your Team List!" )
+            AddTextChat( "Saved " .. compiledinfo.name .. " to the your Team List!" )
             PlayClientSound( "buttons/button15.wav" )
 
             UpdateTeamLine( compiledinfo.name, compiledinfo, true )
-            
-            LAMBDAFS:UpdateKeyValueFile( "lambdaplayers/teamlist.json", { [ compiledinfo.name ] = compiledinfo }, "json" ) 
-            UpdateTeamDataList()
-            net.Start( "lambda_teamsystem_updateteamdatalist" )
-            net.SendToServer()
+            LAMBDAFS:UpdateKeyValueFile( "lambdaplayers/teamlist.json", { [ compiledinfo.name ] = compiledinfo }, "json" )
         end )
+
+        LAMBDAPANELS:CreateButton( rightpanel, BOTTOM, "Request Server Teams", function()
+            if LocalPlayer():GetNW2Bool( "lambda_serverhost", false ) then AddTextChat( "You are the server host!" ) return end
+            if !LocalPlayer():IsSuperAdmin() then AddTextChat( "You must be a Super Admin to request the Server's Team List!" ) return end
+            
+            LAMBDAPANELS:RequestDataFromServer( "lambdaplayers/teamlist.json", "json", function( data )
+                if !data then chat.AddText( "The Server has no teams to send!" ) return end
+
+                teamlist:Clear()
+                table_Empty( teams )
+                table_Merge( teams, data )
+                
+                for k, v in SortedPairs( data ) do
+                    local line = teamlist:AddLine( k .. " | SERVER" )
+                    line.l_isteamlocal = false
+                    line:SetSortValue( 1, v )
+                end
+            end )
+        end )
+
+        --
+
+        LAMBDAPANELS:CreateLabel( "Team Name", rightpanel, TOP )
+        local teamname = LAMBDAPANELS:CreateTextEntry( rightpanel, TOP, "Enter the team's name here" )
+
+        LAMBDAPANELS:CreateLabel( "Team Color", rightpanel, TOP )
+        local teamcolor = LAMBDAPANELS:CreateColorMixer( rightpanel, TOP )
 
         CompileSettings = function()
             if teamname:GetText() == "" then 
