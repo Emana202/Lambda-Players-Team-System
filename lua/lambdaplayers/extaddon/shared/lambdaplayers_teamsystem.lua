@@ -2,44 +2,41 @@ local ipairs = ipairs
 local IsValid = IsValid
 local pairs = pairs
 local random = math.random
-local file_Exists = file.Exists
 local table_Count = table.Count
 local team_SetUp = team.SetUp
 local net = net
 local ents_GetAll = ents.GetAll
 local ents_FindByClass = ents.FindByClass
-
 local modulePrefix = "Lambda_TeamSystem_"
-local defaultTeamList = {
-    [ "Based Bros" ] = {
-        name = "Based Bros",
-        color = Vector( 1, 0, 0 )
-    },
-    [ "Counter-Minges" ] = {
-        name = "Counter-Minges",
-        color = Vector( 0, 0.2471, 1 )
-    },
-    [ "Eeveelutioners" ] = {
-        name = "Eeveelutioners",
-        color = Vector( 0, 1, 1 )
-    },
-    [ "ARCLIGHT" ] = {
-        name = "ARCLIGHT",
-        color = Vector( 0.6039, 0.2392, 1 )
-    }
-}
 
-if !file_Exists( "lambdaplayers/teamlist.json", "DATA" ) then
-    LAMBDAFS:WriteFile( "lambdaplayers/teamlist.json", defaultTeamList, "json", false )
+if SERVER and !file.Exists( "lambdaplayers/teamlist.json", "DATA" ) then
+    LAMBDAFS:WriteFile( "lambdaplayers/teamlist.json", {
+        [ "Based Bros" ] = {
+            name = "Based Bros",
+            color = Vector( 1, 0, 0 )
+        },
+        [ "Counter-Minges" ] = {
+            name = "Counter-Minges",
+            color = Vector( 0, 0.2471, 1 )
+        },
+        [ "Eeveelutioners" ] = {
+            name = "Eeveelutioners",
+            color = Vector( 0, 1, 1 )
+        },
+        [ "ARCLIGHT" ] = {
+            name = "ARCLIGHT",
+            color = Vector( 0.6039, 0.2392, 1 )
+        }
+    }, "json", false )
 end
 
 LambdaTeams = LambdaTeams or {}
 
 function LambdaTeams:UpdateData()
-    LambdaTeams.TeamData = LAMBDAFS:ReadFile( "lambdaplayers/teamlist.json", "json" )
-    LambdaTeams.RealTeams = LambdaTeams.RealTeams or {}
-    LambdaTeams.RealTeamCount = LambdaTeams.RealTeamCount or 0
-
+    local teamList = LAMBDAFS:ReadFile( "lambdaplayers/teamlist.json", "json" )
+    if table_Count( teamList ) == 0 then print( "LAMBDA TEAM SYSTEM WARNING: THERE ARE NO TEAMS REGISTERED!" ) return end
+    LambdaTeams.TeamData = teamList
+    
     if ( CLIENT ) then
         LambdaTeams.TeamOptions = { [ "None" ] = "" }
         LambdaTeams.TeamOptionsRandom = { [ "None" ] = "", [ "Random" ] = "random" }
@@ -49,6 +46,9 @@ function LambdaTeams:UpdateData()
             LambdaTeams.TeamOptionsRandom[ k ] = k
         end
     end
+
+    LambdaTeams.RealTeams = LambdaTeams.RealTeams or {}
+    LambdaTeams.RealTeamCount = LambdaTeams.RealTeamCount or 0
 
     for k, v in pairs( LambdaTeams.TeamData ) do 
         if !LambdaTeams.RealTeams[ k ] then
@@ -160,6 +160,7 @@ if ( SERVER ) then
     local ignorePlys = GetConVar( "ai_ignoreplayers" )
     local RandomPairs = RandomPairs
     local table_Random = table.Random
+    local table_Copy = table.Copy
     local timer_Simple = timer.Simple
     local tobool = tobool
 
@@ -210,13 +211,11 @@ if ( SERVER ) then
 
         local teamTbl = LambdaTeams.TeamData
         if limit and limit > 0 then
-            teamTbl = table.Copy( teamTbl )
-            PrintTable( teamTbl )
+            teamTbl = table_Copy( teamTbl )
             for k, _ in pairs( teamTbl ) do
                 if LambdaTeams:GetTeamCount( k ) < limit then continue end
                 teamTbl[ k ] = nil
             end
-            PrintTable( teamTbl )
         end
 
         local teamData
@@ -483,6 +482,7 @@ if ( CLIENT ) then
     local DermaMenu = DermaMenu
     local table_Merge = table.Merge
     local table_Empty = table.Empty
+    local AddNotification = notification.AddLegacy
 
     local defTeamClr = Vector( 1, 1, 1 )
     local teamNameTraceTbl = { filter = { NULL, NULL } }
@@ -591,6 +591,12 @@ if ( CLIENT ) then
     ---
 
     local function OpenLambdaTeamPanel( ply )
+        if !ply:IsSuperAdmin() then 
+            AddNotification( "You must be a Super Admin in order to use this!", 1, 4) 
+            PlayClientSound( "buttons/button10.wav" ) 
+            return 
+        end
+
         local frame = LAMBDAPANELS:CreateFrame( "Lambda Team Editor", 500, 400 )
 
         local leftpanel = LAMBDAPANELS:CreateBasicPanel( frame )
@@ -603,27 +609,23 @@ if ( CLIENT ) then
 
         local CompileSettings
         local ImportTeam
-        local teams = {}
 
-        local localTeams = LAMBDAFS:ReadFile( "lambdaplayers/teamlist.json", "json" )
-        if localTeams then
-            for k, v in spairs( localTeams ) do
-                local line = teamlist:AddLine( k .. " | Local" )
-                line.l_isteamlocal = true
+        LAMBDAPANELS:RequestDataFromServer( "lambdaplayers/teamlist.json", "json", function( data ) 
+            if !data then return end
+
+            for k, v in spairs( data ) do
+                local line = teamlist:AddLine( k )
                 line:SetSortValue( 1, v )
             end
+        end )
 
-            table_Merge( teams, localTeams )
-        end
-
-        local function UpdateTeamLine( teamname, newinfo, islocal )
+        local function UpdateTeamLine( teamname, newinfo )
             for _, v in ipairs( teamlist:GetLines() ) do
                 local info = v:GetSortValue( 1 )
                 if info.name == teamname then v:SetSortValue( 1, newinfo ) return end
             end
 
-            local line = teamlist:AddLine( teamname .. ( islocal and " | Local" or " | SERVER" ) )
-            line.l_isteamlocal = islocal
+            local line = teamlist:AddLine( teamname )
             line:SetSortValue( 1, newinfo )
         end
 
@@ -637,14 +639,8 @@ if ( CLIENT ) then
             local info = line:GetSortValue( 1 )
 
             conmenu:AddOption( "Delete " .. info.name .. "?", function()
-                if line.l_isteamlocal then
-                    LAMBDAFS:RemoveVarFromKVFile( "lambdaplayers/teamlist.json", info.name, "json" ) 
-                    AddTextChat( "Deleted " .. info.name .. " from the your Team List.")
-                else
-                    LAMBDAPANELS:RemoveVarFromKVFile( "lambdaplayers/teamlist.json", info.name, "json" ) 
-                    AddTextChat( "Deleted " .. info.name .. " from the Server's Team List.")
-                end
-
+                LAMBDAPANELS:RemoveVarFromKVFile( "lambdaplayers/teamlist.json", info.name, "json" ) 
+                AddTextChat( "Deleted " .. info.name .. " from the team list.")
                 PlayClientSound( "buttons/button15.wav" )
                 teamlist:RemoveLine( id )
             end )
@@ -655,50 +651,28 @@ if ( CLIENT ) then
         rightpanel:SetSize( 310, 200 )
         rightpanel:Dock( RIGHT )
 
-        LAMBDAPANELS:CreateButton( rightpanel, BOTTOM, "Save To Server", function()
-            if !LocalPlayer():IsSuperAdmin() then chat.AddText( "You must be a Super Admin to save teams to the Server!" ) return end
-            local compiledinfo = CompileSettings()
-            if !compiledinfo then return end
-
-            AddTextChat( "Saved " .. compiledinfo.name .. " to the Server's Team List!" )
-            PlayClientSound( "buttons/button15.wav" )
-
-            local line = teamlist:AddLine( compiledinfo.name .. " | Server" )
-            line.l_isteamlocal = false
-            line:SetSortValue( 1, compiledinfo )
-
-            UpdateTeamLine( compiledinfo.name, compiledinfo, true )
-            LAMBDAPANELS:UpdateKeyValueFile( "lambdaplayers/teamlist.json", { [ compiledinfo.name ] = compiledinfo }, "json" )
-        end )
-
         LAMBDAPANELS:CreateButton( rightpanel, BOTTOM, "Save Team", function()
             local compiledinfo = CompileSettings()
             if !compiledinfo then return end
 
-            AddTextChat( "Saved " .. compiledinfo.name .. " to the your Team List!" )
-            PlayClientSound( "buttons/button15.wav" )
-
-            UpdateTeamLine( compiledinfo.name, compiledinfo, true )
-            LAMBDAFS:UpdateKeyValueFile( "lambdaplayers/teamlist.json", { [ compiledinfo.name ] = compiledinfo }, "json" )
-        end )
-
-        LAMBDAPANELS:CreateButton( rightpanel, BOTTOM, "Request Server Teams", function()
-            if LocalPlayer():GetNW2Bool( "lambda_serverhost", false ) then AddTextChat( "You are the server host!" ) return end
-            if !LocalPlayer():IsSuperAdmin() then AddTextChat( "You must be a Super Admin to request the Server's Team List!" ) return end
-            
-            LAMBDAPANELS:RequestDataFromServer( "lambdaplayers/teamlist.json", "json", function( data )
-                if !data then chat.AddText( "The Server has no teams to send!" ) return end
-
-                teamlist:Clear()
-                table_Empty( teams )
-                table_Merge( teams, data )
-                
-                for k, v in SortedPairs( data ) do
-                    local line = teamlist:AddLine( k .. " | SERVER" )
-                    line.l_isteamlocal = false
-                    line:SetSortValue( 1, v )
+            local alreadyExists = false
+            for _, v in ipairs( teamlist:GetLines() ) do
+                local info = v:GetSortValue( 1 )
+                if info.name == compiledinfo.name then 
+                    v:SetSortValue( 1, compiledinfo ) 
+                    AddTextChat( "Edited team " .. compiledinfo.name .. "'s' data." )
+                    alreadyExists = true; break 
                 end
-            end )
+            end
+
+            if !alreadyExists then
+                local line = teamlist:AddLine( compiledinfo.name )
+                line:SetSortValue( 1, compiledinfo )
+                AddTextChat( "Saved " .. compiledinfo.name .. " to the team list." )
+            end
+
+            PlayClientSound( "buttons/button15.wav" )
+            LAMBDAPANELS:UpdateKeyValueFile( "lambdaplayers/teamlist.json", { [ compiledinfo.name ] = compiledinfo }, "json" )
         end )
 
         --
@@ -730,6 +704,6 @@ if ( CLIENT ) then
         end
     end
 
-    RegisterLambdaPanel( "Teams", "Opens a panel that allows you to create and edit lambda teams.", OpenLambdaTeamPanel )
+    RegisterLambdaPanel( "LambdaTeam", "Opens a panel that allows you to create and edit lambda teams. You must be a Super Admin to use this panel. Make sure to refresh the team list after adding or deleting a team.", OpenLambdaTeamPanel )
 
 end
