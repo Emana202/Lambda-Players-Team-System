@@ -255,36 +255,39 @@ if ( SERVER ) then
         self.l_NextEnemyTeamSearchT = CurTime() + 1.0
         self:SetExternalVar( "l_PlyNoTeamColor", self:GetPlyColor() )
 
-        local ply = self:GetCreator()
-        timer_Simple( FrameTime() * 2, function()
-            if IsValid( ply ) then
-                self:SetExternalVar( "l_PlyNoTeamColor", self:GetPlyColor() )
-                SetTeamToLambda( self, ply:GetInfo( "lambdaplayers_teamsystem_lambdateam" ), tobool( ply:GetInfo( "lambdaplayers_teamsystem_includenoteams" ) ), teamLimit:GetInt() ) 
-            elseif self.l_MWSspawned then
+        self:SimpleTimer( 0.1, function()
+            if self.l_TeamName then return end
+
+            if self.l_MWSspawned then
                 self:SetExternalVar( "l_PlyNoTeamColor", self:GetPlyColor() )
                 SetTeamToLambda( self, mwsTeam:GetString(), incNoTeams:GetBool(), mwsTeamLimit:GetInt() )
+            else
+                local ply = self:GetCreator()
+                if IsValid( ply ) then
+                    self:SetExternalVar( "l_PlyNoTeamColor", self:GetPlyColor() )
+                    SetTeamToLambda( self, ply:GetInfo( "lambdaplayers_teamsystem_lambdateam" ), tobool( ply:GetInfo( "lambdaplayers_teamsystem_includenoteams" ) ), teamLimit:GetInt() ) 
+                end
             end
 
             if self.l_TeamColor then self:SetPlyColor( self.l_TeamColor:ToVector() ) end
-        end )
+        end, true )
     end
 
     local function LambdaPostRecreated( self )
-        if self.l_TeamName then
-            self:SetNW2String( "lambda_teamname", self.l_TeamName )
-            self:SetNWString( "lambda_teamname", self.l_TeamName )
+        if !self.l_TeamName then return end
+        self:SetNW2String( "lambda_teamname", self.l_TeamName )
+        self:SetNWString( "lambda_teamname", self.l_TeamName )
 
-            if self.l_TeamColor then
-                self.l_TeamColor = Color( self.l_TeamColor.r, self.l_TeamColor.g, self.l_TeamColor.b )
-                self:SetNW2Vector( "lambda_teamcolor", self.l_TeamColor:ToVector() )
-                self:SetNWVector( "lambda_teamcolor", self.l_TeamColor:ToVector() )
+        if !self.l_TeamColor then return end
+        self.l_TeamColor = Color( self.l_TeamColor.r, self.l_TeamColor.g, self.l_TeamColor.b )
 
-                if self.l_PlyNoTeamColor and !teamsEnabled:GetBool() then
-                    self:SetPlyColor( self.l_PlyNoTeamColor )
-                else
-                    self:SetPlyColor( self.l_TeamColor:ToVector() )
-                end
-            end
+        self:SetNW2Vector( "lambda_teamcolor", self.l_TeamColor:ToVector() )
+        self:SetNWVector( "lambda_teamcolor", self.l_TeamColor:ToVector() )
+
+        if self.l_PlyNoTeamColor and !teamsEnabled:GetBool() then
+            self:SetPlyColor( self.l_PlyNoTeamColor )
+        else
+            self:SetPlyColor( self.l_TeamColor:ToVector() )
         end
     end
 
