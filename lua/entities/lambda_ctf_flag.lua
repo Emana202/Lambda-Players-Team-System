@@ -37,6 +37,7 @@ if ( SERVER ) then
     local FindInSphere = ents.FindInSphere
     local ipairs = ipairs
     local random = math.random
+    local Rand = math.Rand
     local ents_Create = ents.Create
     local IsValidModel = util.IsValidModel
     local returnTime = GetConVar( "lambdaplayers_teamsystem_ctf_returntime" )
@@ -60,9 +61,7 @@ if ( SERVER ) then
         self.CaptureZone.IsLambdaCaptureZone = true
         self:DeleteOnRemove( self.CaptureZone )
 
-        self.FlagHolder = NULL
         self:SetFlagHolderEnt( NULL )
-        
         self.FlagHolderName = nil
         self.FlagHolderTeam = nil
         self.FlagHolderColor = nil
@@ -91,22 +90,18 @@ if ( SERVER ) then
 
     function ENT:SetFlagHolder( ent )
         if ent == false then
-            if IsValid( self.FlagHolder ) then 
-                self.FlagHolder.l_HasFlag = false 
+            if IsValid( self:GetFlagHolderEnt() ) then 
+                self:GetFlagHolderEnt().l_HasFlag = false 
             end
 
-            self.FlagHolder = NULL
             self:SetFlagHolderEnt( NULL )
-
             self.FlagHolderName = nil
             self.FlagHolderTeam = nil
             self.FlagHolderColor = nil
             self:SetIsPickedUp( false )
         else
-            self.FlagHolder = ent
             self:SetFlagHolderEnt( ent )
-
-            self.FlagHolder.l_HasFlag = true
+            ent.l_HasFlag = true
             self.FlagHolderName = ent:Nick()
             self.FlagHolderTeam = LambdaTeams:GetPlayerTeam( ent )
             self.FlagHolderColor = LambdaTeams:GetTeamColor( self.FlagHolderTeam ):ToColor()
@@ -122,7 +117,7 @@ if ( SERVER ) then
         local flagName = self:GetFlagName()
         local teamColor = self:GetTeamColor():ToColor()
         if teamName != "Neutral" then
-            LambdaPlayers_ChatAdd( nil, self.FlagHolderColor, self.FlagHolderName, color_glacier, " captured ", teamColor, teamName, color_glacier, "'s ", teamColor, flagName, color_glacier, " flag!" )
+            LambdaPlayers_ChatAdd( nil, self.FlagHolderColor, self.FlagHolderName, color_glacier, " captured ", teamColor, teamName, "'s ", flagName, color_glacier, " flag!" )
         else
             LambdaPlayers_ChatAdd( nil, self.FlagHolderColor, self.FlagHolderName, color_glacier, " captured the ", teamColor, flagName, color_glacier, " flag!" )
         end
@@ -133,6 +128,14 @@ if ( SERVER ) then
             net.WriteString( self.FlagHolderTeam )
             net.WriteString( teamName )
         net.Broadcast()
+
+        for _, lambda in ipairs( GetLambdaPlayers() ) do
+            if !lambda:GetIsDead() and random( 1, 100 ) <= lambda:GetVoiceChance() / 2 then
+                lambda:SimpleTimer( Rand( 0.1, 1.0 ), function()
+                    lambda:PlaySoundFile( lambda:GetVoiceLine( lambda.l_TeamName == teamName and "death" or ( random( 1, 4 ) == 1 and "taunt" or "kill" ) ) )
+                end )
+            end
+        end
 
         self:ReturnToZone()
         if IsValid( self.Trail ) then self.Trail:Remove() end
@@ -149,7 +152,7 @@ if ( SERVER ) then
     end
 
     function ENT:Think()
-        local holder = self.FlagHolder
+        local holder = self:GetFlagHolderEnt()
         local teamName = self:GetTeamName()
         local flagName = self:GetFlagName()
         local teamColor = self:GetTeamColor():ToColor()
@@ -158,7 +161,7 @@ if ( SERVER ) then
             local retTime = self:GetReturnTime()
             if retTime != 0 and ( retTime - CurTime() ) <= 1 then
                 if teamName != "Neutral" then
-                    LambdaPlayers_ChatAdd( nil, teamColor, teamName, color_glacier, "'s ", teamColor, flagName, color_glacier, " flag has returned back to its zone!" )
+                    LambdaPlayers_ChatAdd( nil, teamColor, teamName, "'s ", flagName, color_glacier, " flag has returned back to its zone!" )
                 else
                     LambdaPlayers_ChatAdd( nil, teamColor, flagName, color_glacier, " flag has returned back to its zone!" )
                 end
@@ -176,13 +179,13 @@ if ( SERVER ) then
         end
 
         for _, ent in ipairs( FindInSphere( self.CaptureZone:GetPos(), 100 ) ) do
-            if ent != self and IsValid( ent ) and ent.IsLambdaFlag and ent:GetIsPickedUp() and ent:GetTeamName() != teamName and LambdaTeams:GetPlayerTeam( ent.FlagHolder ) == teamName then
+            if ent != self and IsValid( ent ) and ent.IsLambdaFlag and ent:GetIsPickedUp() and ent:GetTeamName() != teamName and LambdaTeams:GetPlayerTeam( ent:GetFlagHolderEnt() ) == teamName then
                 ent:OnCaptured()
             end
         end
 
         if self:GetIsPickedUp() then
-            if IsValid( holder ) and holder:Alive() then
+            if IsValid( holder ) and holder:Alive() and ( !holder:IsPlayer() or !ignorePlys:GetBool() ) then
                 local backBone = holder:LookupBone( "ValveBiped.Bip01_Spine2" )
                 if backBone then
                     local backPos, backAng = holder:GetBonePosition( backBone )
@@ -196,7 +199,7 @@ if ( SERVER ) then
                 end
             else
                 if teamName != "Neutral" then
-                    LambdaPlayers_ChatAdd( nil, teamColor, teamName, color_glacier, "'s ", teamColor, flagName, color_glacier, " flag has been dropped!" )
+                    LambdaPlayers_ChatAdd( nil, teamColor, teamName, "'s ", flagName, color_glacier, " flag has been dropped!" )
                 else
                     LambdaPlayers_ChatAdd( nil, teamColor, flagName, color_glacier, " flag has been dropped!")
                 end
@@ -228,9 +231,17 @@ if ( SERVER ) then
                             self.Trail = SpriteTrail( self, 0, teamColor, true, 40, 40, 2, ( 1 / ( 40 - 40 ) * 0.5 ) , "trails/laser" )
 
                             if teamName != "Neutral" then
-                                LambdaPlayers_ChatAdd( nil, self.FlagHolderColor, self.FlagHolderName, color_glacier, " took ", teamColor, teamName, color_glacier, "'s ", teamColor, flagName, color_glacier, " flag!" )
+                                LambdaPlayers_ChatAdd( nil, self.FlagHolderColor, self.FlagHolderName, color_glacier, " took ", teamColor, teamName, "'s ", flagName, color_glacier, " flag!" )
                             else
                                 LambdaPlayers_ChatAdd( nil, self.FlagHolderColor, self.FlagHolderName, color_glacier, " took the ", teamColor, flagName, color_glacier, " flag!" )
+                            end
+
+                            for _, lambda in ipairs( GetLambdaPlayers() ) do
+                                if lambda.l_TeamName == teamName and !lambda:GetIsDead() and random( 1, 100 ) <= lambda:GetVoiceChance() / 2 then
+                                    lambda:SimpleTimer( Rand( 0.1, 1.0 ), function()
+                                        lambda:PlaySoundFile( lambda:GetVoiceLine( "panic" ) )
+                                    end )
+                                end
                             end
 
                             net.Start( "lambda_teamsystem_playclientsound" )
@@ -265,43 +276,43 @@ if ( CLIENT ) then
     function ENT:Draw3DText( text, pos, ang, scale )
         local color = self:GetTeamColor():ToColor()
 
-        cam.IgnoreZ( true )
-            cam.Start3D2D(pos, ang,scale)
-                cam.IgnoreZ( true )
-                DrawText( text, "ChatFont", 0, 0, color, TEXT_ALIGN_CENTER )
-            cam.End3D2D()
+        cam.Start3D2D(pos, ang, scale)
+            DrawText( text, "ChatFont", 0, 0, color, TEXT_ALIGN_CENTER )
+        cam.End3D2D()
 
-            ang:RotateAroundAxis( angAxisVec, 180 )
+        ang:RotateAroundAxis( angAxisVec, 180 )
 
-            cam.Start3D2D(pos, ang, scale)
-                cam.IgnoreZ( true )
-                DrawText( text, "ChatFont", 0, 0, color, TEXT_ALIGN_CENTER )
-            cam.End3D2D()
-        cam.IgnoreZ( false )
+        cam.Start3D2D(pos, ang, scale)
+            DrawText( text, "ChatFont", 0, 0, color, TEXT_ALIGN_CENTER )
+        cam.End3D2D()
     end
 
     function ENT:Draw()
+        local isCapZone = self:GetIsCaptureZone()
+        local teamName = self:GetTeamName()
+
         if !self:GetIsPickedUp() then
+            local myPos = self:GetPos()
             drawAng[ 2 ] = ( CurTime() * 5 % 360 )
 
             local maxsZ = self:OBBMaxs().z
             drawVec[ 3 ] = ( 40 + maxsZ )
-            self:Draw3DText( self:GetTeamName(), ( self:GetPos() + drawVec ), drawAng, 0.5 )
+            self:Draw3DText( self:GetTeamName(), ( myPos + drawVec ), drawAng, 0.5 )
 
             drawVec[ 3 ] = ( 30 + maxsZ )
-            self:Draw3DText( "[" .. self:GetFlagName() .. "]" .. ( self:GetIsCaptureZone() and ": CAPTURE ZONE" or "" ), ( self:GetPos() + drawVec ), drawAng, 0.5 )
+            self:Draw3DText( "[" .. self:GetFlagName() .. "]" .. ( isCapZone and ": CAPTURE ZONE" or "" ), ( myPos + drawVec ), drawAng, 0.5 )
 
             if !self:GetIsAtHome() then
                 local returnTime = self:GetReturnTime()
                 drawVec[ 3 ] = ( 20 + maxsZ )
-                self:Draw3DText( "Returns in: " .. floor( returnTime - CurTime() ), ( self:GetPos() + drawVec ), drawAng, 0.5 )
+                self:Draw3DText( "Returns in: " .. floor( returnTime - CurTime() ), ( myPos + drawVec ), drawAng, 0.5 )
             end
         end
 
         local ply = LocalPlayer()
-        if !self:GetIsCaptureZone() and ( ply != self:GetFlagHolderEnt() or ply:ShouldDrawLocalPlayer() ) then
-            self:DrawModel()
-        end
+        local drawMdl = ( !isCapZone and ( ply != self:GetFlagHolderEnt() or ply:ShouldDrawLocalPlayer() ) )
+        self:DrawShadow( drawMdl )
+        if drawMdl then self:DrawModel() end
     end
 
 end

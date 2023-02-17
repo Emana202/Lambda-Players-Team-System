@@ -9,6 +9,8 @@ local ents_GetAll = ents.GetAll
 local ents_FindByClass = ents.FindByClass
 local modulePrefix = "Lambda_TeamSystem_"
 
+local ignorePlys = GetConVar( "ai_ignoreplayers" )
+
 if SERVER and !file.Exists( "lambdaplayers/teamlist.json", "DATA" ) then
     LAMBDAFS:WriteFile( "lambdaplayers/teamlist.json", {
         [ "Based Bros" ] = {
@@ -93,8 +95,20 @@ local drawTeamName  = CreateLambdaConvar( "lambdaplayers_teamsystem_drawteamname
 local drawHalo      = CreateLambdaConvar( "lambdaplayers_teamsystem_drawhalo", 1, true, true, false, "Enables drawing halos around you Lambda Teammates", 0, 1, { name = "Draw Halos", type = "Bool", category = "Team System" } )
 
 CreateLambdaConvar( "lambdaplayers_teamsystem_koth_capturerate", 0.2, true, false, false, "The speed rate of capturing the KOTH Points.", 0.01, 5.0, { name = "Capture Rate", type = "Slider", decimals = 2, category = "Team System - KOTH" } )
+local kothCapRange = CreateLambdaConvar( "lambdaplayers_teamsystem_koth_capturerange", 500, true, false, false, "How close player should be to start capturing the point.", 100, 1000, { name = "Capture Range", type = "Slider", decimals = 0, category = "Team System - KOTH" } )
+
+local kothIconEnabled = CreateLambdaConvar( "lambdaplayers_teamsystem_koth_icon_enabled", 1, true, true, false, "If your team's captured KOTH point should have a icon drawn on them.", 0, 1, { name = "Enable Icons", type = "Bool", category = "Team System - KOTH" } )
+local kothIconDrawVisible = CreateLambdaConvar( "lambdaplayers_teamsystem_koth_icon_alwaysdraw", 0, true, true, false, "If the icon should always be drawn no matter if it's visible.", 0, 1, { name = "Always Draw Icon", type = "Bool", category = "Team System - KOTH" } )
+local kothIconFadeStartDist = CreateLambdaConvar( "lambdaplayers_teamsystem_koth_icon_fadeinstartdist", 2000, true, true, false, "How far you should be from the icon for it to completely fade out of view.", 0, 4096, { name = "Icon Fade In Start", type = "Slider", decimals = 0, category = "Team System - KOTH" } )
+local kothIconFadeEndDist = CreateLambdaConvar( "lambdaplayers_teamsystem_koth_icon_fadeinenddist", 500, true, true, false, "How close you should be from the icon for it to become fully visible.", 0, 4096, { name = "Icon Fade In End", type = "Slider", decimals = 0, category = "Team System - KOTH" } )
 
 CreateLambdaConvar( "lambdaplayers_teamsystem_ctf_returntime", 15, true, false, false, "The time Lambda Flag can be in dropped state before returning to its capture zone.", 0, 120, { name = "Time Before Returning", type = "Slider", decimals = 0, category = "Team System - CTF" } )
+
+local ctfIconEnabled = CreateLambdaConvar( "lambdaplayers_teamsystem_ctf_icon_enabled", 1, true, true, false, "If your team's dropped flag or enemy flag carried by your teammate should have a icon drawn on them.", 0, 1, { name = "Enable Icons", type = "Bool", category = "Team System - CTF" } )
+local ctfIconDrawVisible = CreateLambdaConvar( "lambdaplayers_teamsystem_ctf_icon_alwaysdraw", 0, true, true, false, "If the icon should always be drawn no matter if it's visible.", 0, 1, { name = "Always Draw Icon", type = "Bool", category = "Team System - CTF" } )
+local ctfIconFadeStartDist = CreateLambdaConvar( "lambdaplayers_teamsystem_ctf_icon_fadeinstartdist", 2000, true, true, false, "How far you should be from the icon for it to completely fade out of view.", 0, 4096, { name = "Icon Fade In Start", type = "Slider", decimals = 0, category = "Team System - CTF" } )
+local ctfIconFadeEndDist = CreateLambdaConvar( "lambdaplayers_teamsystem_ctf_icon_fadeinenddist", 500, true, true, false, "How close you should be from the icon for it to become fully visible.", 0, 4096, { name = "Icon Fade In End", type = "Slider", decimals = 0, category = "Team System - CTF" } )
+
 CreateLambdaConvar( "lambdaplayers_teamsystem_ctf_snd_onpickup_enemy", "lambdaplayers/ctf/flagsteal.mp3", true, true, false, "The sound that plays when your team picks up enemy team's CTF Flag.", 0, 1, { name = "Sound - On Enemy Flag Pickup", type = "Text", category = "Team System - CTF" } )
 CreateLambdaConvar( "lambdaplayers_teamsystem_ctf_snd_onpickup_ally", "lambdaplayers/ctf/ourflagstole.mp3", true, true, false, "The sound that plays when enemy team picks up your team's CTF Flag.", 0, 1, { name = "Sound - On Ally Flag Pickup", type = "Text", category = "Team System - CTF" } )
 CreateLambdaConvar( "lambdaplayers_teamsystem_ctf_snd_oncapture_ally", "lambdaplayers/ctf/flagcapture.mp3", true, true, false, "The sound that plays when your team has captured enemy team's CTF Flag.", 0, 1, { name = "Sound - On Enemy Flag Capture", type = "Text", category = "Team System - CTF" } )
@@ -117,11 +131,17 @@ function LambdaTeams:GetPlayerTeam( ply )
         if ( CLIENT ) then
             plyTeam = ply:GetNW2String( "lambda_teamname" )
             if !plyTeam or plyTeam == "" then plyTeam = ply:GetNWString( "lambda_teamname" ) end
-        else
+        end
+        if ( SERVER ) then
             plyTeam = ply.l_TeamName
         end
     elseif ply:IsPlayer() then
-        plyTeam = ( CLIENT and playerTeam:GetString() or ply:GetInfo( "lambdaplayers_teamsystem_playerteam" ) )
+        if ( CLIENT ) then
+            plyTeam = playerTeam:GetString()
+        end
+        if ( SERVER ) then
+            plyTeam = ply:GetInfo( "lambdaplayers_teamsystem_playerteam" )
+        end
     end
 
     return ( plyTeam != "" and plyTeam )
@@ -142,7 +162,7 @@ end
 function LambdaTeams:GetTeamCount( teamName )
     local count = 0
     for _, v in ipairs( ents_GetAll() ) do
-        if LambdaTeams:GetPlayerTeam( v ) == teamName then count = count + 1 end
+        if LambdaTeams:GetPlayerTeam( v ) == teamName and ( !v:IsPlayer() or !ignorePlys:GetBool() ) then count = count + 1 end
     end
     return count
 end
@@ -155,9 +175,8 @@ if ( SERVER ) then
     util.AddNetworkString( "lambda_teamsystem_setplayerteam" )
 
     local CurTime = CurTime
-    local GetNavArea = navmesh.GetNavArea
+    local GetNearestNavArea = navmesh.GetNearestNavArea
     local VectorRand = VectorRand
-    local ignorePlys = GetConVar( "ai_ignoreplayers" )
     local RandomPairs = RandomPairs
     local table_Random = table.Random
     local table_Copy = table.Copy
@@ -278,6 +297,9 @@ if ( SERVER ) then
         self:SetNW2String( "lambda_teamname", self.l_TeamName )
         self:SetNWString( "lambda_teamname", self.l_TeamName )
 
+        local teamID = LambdaTeams.RealTeams[ self.l_TeamName ]
+        if teamID then self:SetTeam( teamID ) end
+
         if !self.l_TeamColor then return end
         self.l_TeamColor = Color( self.l_TeamColor.r, self.l_TeamColor.g, self.l_TeamColor.b )
 
@@ -301,9 +323,12 @@ if ( SERVER ) then
             local kothEnt = self.l_KOTH_Entity
             if ( self.l_TeamName and attackOthers:GetBool() or IsValid( kothEnt ) ) and ( !self:InCombat() or !self:CanSee( ene ) ) then
                 local surroundings = self:FindInSphere( nil, 2000, function( ent )
-                    if LambdaIsValid( ent ) and ( !LambdaIsValid( ene ) or self:GetRangeSquaredTo( ent ) < self:GetRangeSquaredTo( ene ) ) and self:CanSee( ent ) then
+                    if LambdaIsValid( ent ) and ( !LambdaIsValid( ene ) or self:GetRangeSquaredTo( ent ) < self:GetRangeSquaredTo( ene ) ) and self:CanTarget( ent ) and self:CanSee( ent ) then
                         local areTeammates = LambdaTeams:AreTeammates( self, ent )
-                        return ( self:CanTarget( ent ) and ( areTeammates == false or IsValid( kothEnt ) and areTeammates != true and kothEnt == ent.l_KOTH_Entity and ( ent:IsInRange( kothEnt, 500 ) or kothEnt:GetCapturerName() == ent:Nick() ) ) )
+                        if IsValid( kothEnt ) and kothEnt == ent.l_KOTH_Entity and ent:IsInRange( kothEnt, 1000 ) and !areTeammates then
+                            return true
+                        end
+                        return ( areTeammates == false )
                     end
                 end )
 
@@ -313,18 +338,14 @@ if ( SERVER ) then
             end
         end
 
-        if self:InCombat() then
-            if self.l_HasFlag then 
-                if IsValid( self.l_CTF_CaptureZone ) then
-                    self.l_movepos = self.l_CTF_CaptureZone:GetPos()
-                end
-            elseif IsValid( self.l_CTF_Flag ) and self.l_CTF_Flag:GetTeamName() != self.l_TeamName and self:IsInRange( self.l_CTF_Flag, 384 ) and self:CanSee( self.l_CTF_Flag ) then
-                self.l_movepos = self.l_CTF_Flag:GetPos()
-            end
+        local flag = self.l_CTF_Flag
+        if IsValid( flag ) and self:InCombat() and ( self.l_HasFlag or flag:GetTeamName() != self.l_TeamName and self:IsInRange( flag, 384 ) and self:CanSee( flag ) ) then
+            self.l_movepos = flag:GetPos()
         end
     end
     
     local function LambdaCanTarget( self, ent )
+        if self.l_HasFlag and ent.IsLambdaPlayer and ( !ent:InCombat() or ent:GetEnemy() != self ) then return true end
         if teamsEnabled:GetBool() and LambdaTeams:AreTeammates( self, ent ) then return true end
     end
     
@@ -343,9 +364,9 @@ if ( SERVER ) then
         local attacker = dmginfo:GetAttacker()
         if attacker == self or !LambdaIsValid( attacker ) then return end
 
-        if LambdaTeams:AreTeammates( self, victim ) and self:CanTarget( attacker ) and ( self:IsInRange( attacker, 500 ) or self:CanSee( attacker ) ) then
+        if LambdaTeams:AreTeammates( self, victim ) and self:CanTarget( attacker ) and ( self:IsInRange( victim, 500 ) or self:CanSee( victim ) ) then
             self:AttackTarget( attacker )
-        elseif LambdaTeams:AreTeammates( self, attacker ) and self:CanTarget( victim ) and ( self:IsInRange( victim, 500 ) or self:CanSee( victim ) ) then
+        elseif LambdaTeams:AreTeammates( self, attacker ) and self:CanTarget( victim ) and ( self:IsInRange( attacker, 500 ) or self:CanSee( attacker ) ) then
             self:AttackTarget( victim )
         end
     end
@@ -356,51 +377,41 @@ if ( SERVER ) then
         local state = self:GetState()
         if state != "Idle" and state != "FindTarget" then return end
 
-        if !IsValid( self.l_KOTH_Entity ) or random( 1, 10 ) == 1 then
+        local kothEnt = self.l_KOTH_Entity
+        if !IsValid( kothEnt ) or kothEnt:GetIsCaptured() and random( 1, ( kothEnt:GetCapturerName() == kothEnt:GetCapturerTeamName( self ) and 4 or 8 ) ) == 1 then
             local kothEnts = ents_FindByClass( "lambda_koth_point" )
-            if #kothEnts > 0 then self.l_KOTH_Entity = kothEnts[ random( #kothEnts ) ] end
+            if #kothEnts > 0 then kothEnt = kothEnts[ random( #kothEnts ) ] end
         end
-
-        if IsValid( self.l_KOTH_Entity ) then
-            local area = GetNavArea( self.l_KOTH_Entity:GetPos(), 500 )
-            self:SetRun( random( 1, 2 ) == 1 and !self:IsInRange( self.l_KOTH_Entity, 500 ) )
-            self:RecomputePath( IsValid( area ) and area:GetRandomPoint() or ( self.l_KOTH_Entity:GetPos() + VectorRand( -500, 500 ) ) )
+        if IsValid( kothEnt ) then
+            self.l_KOTH_Entity = kothEnt
+            local capRange = kothCapRange:GetInt()
+            local area = GetNearestNavArea( kothEnt:GetPos(), false, capRange )
+            self:SetRun( random( 1, 3 ) != 1 and !self:IsInRange( kothEnt, capRange ) )
+            self:RecomputePath( IsValid( area ) and area:GetRandomPoint() or ( kothEnt:GetPos() + VectorRand( -capRange, capRange ) ) )
             return
         end
 
         if self.l_TeamName then
-            local validFlags, validZones = {}, {}
-            for _, flag in ipairs( ents_FindByClass( "lambda_ctf_flag" ) ) do
-                if flag:GetTeamName() == self.l_TeamName then 
-                    validZones[ #validZones + 1 ] = flag.CaptureZone
-
-                    if ( !flag.IsAtHome or random( 1, 5 ) == 1 and !flag:GetIsCaptureZone() ) then
-                        validFlags[ #validFlags + 1 ] = flag
+            local ctfFlag = self.l_CTF_Flag
+            if !IsValid( ctfFlag ) or random( 1, 5 ) == 1 then
+                for _, flag in RandomPairs( ents_FindByClass( "lambda_ctf_flag" ) ) do
+                    if IsValid( flag ) then
+                        if !self.l_HasFlag then 
+                            if !flag:GetIsCaptureZone() and ( flag:GetTeamName() != self.l_TeamName and flag:GetIsPickedUp() or !flag:GetIsAtHome() or random( 1, 3 ) == 1 ) then
+                                ctfFlag = flag
+                                break
+                            end
+                        elseif flag:GetTeamName() == self.l_TeamName and IsValid( flag.CaptureZone ) then
+                            ctfFlag = flag.CaptureZone
+                            break
+                        end
                     end
-                elseif !flag:GetIsCaptureZone() then
-                    validFlags[ #validFlags + 1 ] = flag
                 end
             end
-
-            if !self.l_HasFlag then
-                if #validFlags > 0 then
-                    if !IsValid( self.l_CTF_Flag ) or random( 1, 3 ) == 1 then
-                        self.l_CTF_Flag = validFlags[ random( #validFlags ) ]
-                    end
-                    
-                    self:SetRun( random( 1, 2 ) == 1 )
-                    self:RecomputePath( self.l_CTF_Flag:GetPos() + Vector( random( -50, 50 ), random( -50, 50 ), 0 ) )
-                    
-                    return
-                end
-            elseif #validZones > 0 then
-                if !IsValid( self.l_CTF_CaptureZone ) or random( 1, 4 ) == 1 then
-                    self.l_CTF_CaptureZone = validZones[ random( #validZones ) ]
-                end
-               
+            if IsValid( ctfFlag ) then
+                self:RecomputePath( ctfFlag:GetPos() + Vector( random( -50, 50 ), random( -50, 50 ), 0 ) )
                 self:SetRun( true )
-                self:RecomputePath( self.l_CTF_CaptureZone:GetPos() + Vector( random( -50, 50 ), random( -50, 50 ), 0 ) )
-
+                self.l_CTF_Flag = ctfFlag
                 return
             end
 
@@ -408,8 +419,8 @@ if ( SERVER ) then
             if rndDecision < 30 and stickTogether:GetBool() then
                 for _, ent in RandomPairs( ents_GetAll() ) do
                     if ent != self and LambdaTeams:AreTeammates( self, ent ) and ent:Alive() and ( !ent:IsPlayer() or !ignorePlys:GetBool() ) then
-                        local movePos = ( ent:GetPos() + VectorRand( -400, 400 ) )
-                        local area = GetNavArea( movePos, 400 )
+                        local movePos = ( ( ent.l_issmoving and ( ( isentity( self.l_movepos ) and IsValid( self.l_movepos ) ) and self.l_movepos:GetPos() or self.l_movepos ) or ent:GetPos() ) + VectorRand( -400, 400 ) )
+                        local area = GetNearestNavArea( movePos, false, 400 )
                         if IsValid( area ) then movePos = area:GetClosestPointOnArea( movePos ) end
 
                         self:RecomputePath( movePos )
@@ -420,7 +431,7 @@ if ( SERVER ) then
                 for _, ent in RandomPairs( ents_GetAll() ) do
                     if ent != self and LambdaTeams:AreTeammates( self, ent ) == false and ent:Alive() and self:CanTarget( ent ) then
                         local movePos = ( ent:GetPos() + VectorRand( -300, 300 ) )
-                        local area = GetNavArea( movePos, 300 )
+                        local area = GetNearestNavArea( movePos, false, 300 )
                         if IsValid( area ) then movePos = area:GetClosestPointOnArea( movePos ) end
 
                         self:RecomputePath( movePos )
@@ -468,6 +479,7 @@ if ( CLIENT ) then
 
     local LocalPlayer = LocalPlayer
     local GetConVar = GetConVar
+    local surface = surface
     local PlayClientSound = surface.PlaySound
     local file_Find = file.Find
     local string_Replace = string.Replace
@@ -486,10 +498,16 @@ if ( CLIENT ) then
     local table_Merge = table.Merge
     local table_Empty = table.Empty
     local AddNotification = notification.AddLegacy
-
-    local defTeamClr = Vector( 1, 1, 1 )
-    local teamNameTraceTbl = { filter = { NULL, NULL } }
+    local Clamp = math.Clamp
+    local LerpVector = LerpVector
+    local vec_white = Vector( 1, 1, 1 )
     local uiScale = GetConVar( "lambdaplayers_uiscale" )
+
+    local nameTrTbl = {}
+    local hudTrTbl = { filter = function( ent ) if ent:IsWorld() then return true end end }
+
+    local ctfFlagCircle = Material( "lambdaplayers/icon/team_flag_circle.png" )
+    local kothFlagCircle = Material( "lambdaplayers/icon/team_flag_square.png" )
 
     net.Receive( "lambda_teamsystem_playclientsound", function()
         local plyTeam = playerTeam:GetString()
@@ -554,7 +572,8 @@ if ( CLIENT ) then
     local function OnHUDPaint()
         if !teamsEnabled:GetBool() then return end
         local ply = LocalPlayer()
-            
+        local scrW, scrH = ScrW(), ScrH()
+
         local traceEnt = ply:GetEyeTrace().Entity
         if LambdaIsValid( traceEnt ) and traceEnt.IsLambdaPlayer then
             local entTeam = LambdaTeams:GetPlayerTeam( traceEnt )
@@ -562,26 +581,141 @@ if ( CLIENT ) then
                 local friendTbl = traceEnt.l_friends
                 local height = ( ( friendTbl and !table_IsEmpty( friendTbl ) ) and 1.68 or 1.78 )
                 
-                DrawText( "Team: " .. entTeam, "lambdaplayers_displayname", ( ScrW() / 2 ), ( ScrH() / height ) + LambdaScreenScale( 1 + uiScale:GetFloat() ), LambdaTeams:GetTeamColor( entTeam, true ), TEXT_ALIGN_CENTER ) 
+                DrawText( "Team: " .. entTeam, "lambdaplayers_displayname", ( scrW / 2 ), ( scrH / height ) + LambdaScreenScale( 1 + uiScale:GetFloat() ), LambdaTeams:GetTeamColor( entTeam, true ), TEXT_ALIGN_CENTER ) 
             end
         end
 
         local plyTeam = playerTeam:GetString()
-        if plyTeam == "" or !drawTeamName:GetBool() then return end
+        if plyTeam == "" then return end
 
-        teamNameTraceTbl.start = ply:EyePos()
-        teamNameTraceTbl.filter[ 1 ] = ply
+        local eyePos = ply:EyePos()
 
-        for _, ent in ipairs( GetLambdaPlayers() ) do
-            local entTeam = LambdaTeams:GetPlayerTeam( ent )
-            if entTeam and entTeam == plyTeam and !ent:GetIsDead() and ent:IsBeingDrawn() then
-                local textPos = ( ent:GetPos() + ent:GetUp() * 96 )
-                teamNameTraceTbl.endpos = textPos
-                teamNameTraceTbl.filter[ 2 ] = ent
-                
-                if !TraceLine( teamNameTraceTbl ).Hit then
-                    local drawPos = textPos:ToScreen()
-                    DrawText( entTeam .. "'s Member", "lambdaplayers_displayname", drawPos.x, drawPos.y, LambdaTeams:GetTeamColor( entTeam, true ), TEXT_ALIGN_CENTER )
+        if drawTeamName:GetBool() then
+            nameTrTbl.start = eyePos
+            nameTrTbl.filter = ply
+
+            for _, ent in ipairs( GetLambdaPlayers() ) do
+                local entTeam = LambdaTeams:GetPlayerTeam( ent )
+                if entTeam and entTeam == plyTeam and !ent:GetIsDead() and ent:IsBeingDrawn() then
+                    local textPos = ( ent:GetPos() + ent:GetUp() * 96 )
+                    nameTrTbl.endpos = textPos
+                    
+                    local nameTr = TraceLine( nameTrTbl )
+                    if !nameTr.Hit or nameTr.Entity == ent then
+                        local drawPos = textPos:ToScreen()
+                        DrawText( entTeam .. "'s Member", "lambdaplayers_displayname", drawPos.x, drawPos.y, LambdaTeams:GetTeamColor( entTeam, true ), TEXT_ALIGN_CENTER )
+                    end
+                end
+            end
+        end
+
+        if kothIconEnabled:GetBool() then
+            local fadeInStart = kothIconFadeStartDist:GetInt()
+            local fadeOutEnd = kothIconFadeEndDist:GetInt()
+            
+            for _, koth in ipairs( ents_FindByClass( "lambda_koth_point" ) ) do
+                if IsValid( koth ) and !flag:IsDormant() then
+                    local iconPos = koth:WorldSpaceCenter()
+
+                    hudTrTbl.start = eyePos
+                    hudTrTbl.endpos = iconPos
+
+                    if kothIconDrawVisible:GetBool() or TraceLine( hudTrTbl ).Hit then
+                        surface.SetMaterial( kothFlagCircle )
+
+                        local iconClr = koth:GetCapturerColor()
+                        local capPerc = koth:GetCapturePercent()
+                        if !koth:GetIsCaptured() then
+                            iconClr = LerpVector( ( capPerc / 100 ), iconClr, koth:GetContesterColor() )
+                        else
+                            iconClr = LerpVector( ( ( 100 - capPerc ) / 100 ), iconClr, vec_white )
+                        end
+
+                        local drawAlpha = 0
+                        local dist = eyePos:Distance( iconPos )
+                        if dist < fadeInStart and dist > fadeOutEnd then
+                            local norm = ( 1 / ( fadeInStart - fadeOutEnd ) * ( dist - fadeInStart ) + 1 )
+                            drawAlpha = ( ( 1 - norm ) * 255 )
+                        elseif dist < fadeOutEnd then
+                            drawAlpha = 255
+                        end
+                        
+                        iconClr = iconClr:ToColor()
+                        surface.SetDrawColor( iconClr.r, iconClr.g, iconClr.b, drawAlpha )
+                        
+                        local angDiff = math.AngleDifference( ply:GetAimVector():GetNormalized():Angle().y, ( iconPos - eyePos ):GetNormalized():Angle().y )
+                        if angDiff < 0 then angDiff = 180 + ( angDiff + 180 ) end
+                        angDiff = angDiff - 90
+                        
+                        local offsetSize = 45
+                        local x = ( scrW / 2 ) + ( ( ( scrW - offsetSize ) / 2 ) * math.cos( math.rad( angDiff ) ) )
+                        local y = ( scrH / 2 ) + ( ( ( scrH - ( offsetSize * 1.4 ) ) / 2 ) * math.sin( math.rad( angDiff ) ) )
+
+                        local screenPos = iconPos:ToScreen()
+                        if screenPos.x < x and screenPos.x < ( scrW - x ) or screenPos.x > x and screenPos.x > ( scrW - x ) then 
+                            screenPos.x = x
+                        end
+                        if screenPos.y < y or screenPos.y > scrH then 
+                            screenPos.y = y 
+                        elseif screenPos.y > ( scrH - y ) and screenPos.y < scrH then 
+                            screenPos.y = ( scrH - y ) 
+                        end
+
+                        surface.DrawTexturedRect( screenPos.x, screenPos.y, 32, 32 )
+                    end
+                end
+            end
+        end
+
+        if ctfIconEnabled:GetBool() then
+            local fadeInStart = ctfIconFadeStartDist:GetInt()
+            local fadeOutEnd = ctfIconFadeEndDist:GetInt()
+
+            for _, flag in ipairs( ents_FindByClass( "lambda_ctf_flag" ) ) do
+                if IsValid( flag ) and !flag:IsDormant() then
+                    local holder = flag:GetFlagHolderEnt()
+                    if holder != ply and ( !flag:GetIsAtHome() and !flag:GetIsPickedUp() and flag:GetTeamName() == plyTeam or IsValid( holder ) and LambdaTeams:GetPlayerTeam( holder ) == plyTeam ) then
+                        local iconPos = flag:WorldSpaceCenter()
+
+                        hudTrTbl.start = eyePos
+                        hudTrTbl.endpos = iconPos
+
+                        if ctfIconDrawVisible:GetBool() or TraceLine( hudTrTbl ).Hit then
+                            surface.SetMaterial( ctfFlagCircle )
+
+                            local drawAlpha = 0
+                            local dist = eyePos:Distance( iconPos )
+                            if dist < fadeInStart and dist > fadeOutEnd then
+                                local norm = ( 1 / ( fadeInStart - fadeOutEnd ) * ( dist - fadeInStart ) + 1 )
+                                drawAlpha = ( ( 1 - norm ) * 255 )
+                            elseif dist < fadeOutEnd then
+                                drawAlpha = 255
+                            end
+
+                            local iconClr = flag:GetTeamColor():ToColor()
+                            surface.SetDrawColor( iconClr.r, iconClr.g, iconClr.b, drawAlpha )
+                            
+                            local angDiff = math.AngleDifference( ply:GetAimVector():GetNormalized():Angle().y, ( iconPos - eyePos ):GetNormalized():Angle().y )
+                            if angDiff < 0 then angDiff = 180 + ( angDiff + 180 ) end
+                            angDiff = angDiff - 90
+                            
+                            local offsetSize = 45
+                            local x = ( scrW / 2 ) + ( ( ( scrW - offsetSize ) / 2 ) * math.cos( math.rad( angDiff ) ) )
+                            local y = ( scrH / 2 ) + ( ( ( scrH - ( offsetSize * 1.4 ) ) / 2 ) * math.sin( math.rad( angDiff ) ) )
+
+                            local screenPos = iconPos:ToScreen()
+                            if screenPos.x < x and screenPos.x < ( scrW - x ) or screenPos.x > x and screenPos.x > ( scrW - x ) then 
+                                screenPos.x = x
+                            end
+                            if screenPos.y < y or screenPos.y > scrH then 
+                                screenPos.y = y 
+                            elseif screenPos.y > ( scrH - y ) and screenPos.y < scrH then 
+                                screenPos.y = ( scrH - y ) 
+                            end
+
+                            surface.DrawTexturedRect( screenPos.x, screenPos.y, 32, 32 )
+                        end
+                    end
                 end
             end
         end
@@ -703,7 +837,7 @@ if ( CLIENT ) then
 
         ImportTeam = function( infotable )
             teamname:SetText( infotable.name or "" )
-            teamcolor:SetVector( infotable.color or defTeamClr )
+            teamcolor:SetVector( infotable.color or vec_white )
         end
     end
 
