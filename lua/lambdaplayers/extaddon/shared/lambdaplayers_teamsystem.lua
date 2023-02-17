@@ -393,7 +393,7 @@ if ( SERVER ) then
 
         if self.l_TeamName then
             local ctfFlag = self.l_CTF_Flag
-            if !IsValid( ctfFlag ) or random( 1, 5 ) == 1 then
+            if !IsValid( ctfFlag ) or random( 1, 5 ) == 1 or self.l_HasFlag and !ctfFlag.IsLambdaCaptureZone or !self.l_HasFlag and ctfFlag.IsLambdaCaptureZone then
                 for _, flag in RandomPairs( ents_FindByClass( "lambda_ctf_flag" ) ) do
                     if IsValid( flag ) then
                         if !self.l_HasFlag then 
