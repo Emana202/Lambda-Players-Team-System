@@ -4,10 +4,14 @@ local pairs = pairs
 local random = math.random
 local table_Count = table.Count
 local team_SetUp = team.SetUp
+local team_SetColor = team.SetColor
 local net = net
 local ents_GetAll = ents.GetAll
 local ents_FindByClass = ents.FindByClass
+local table_Copy = table.Copy
+local timer_Simple = timer.Simple
 local modulePrefix = "Lambda_TeamSystem_"
+local defaultPlyClr = Color( 255, 255, 100 )
 
 local ignorePlys = GetConVar( "ai_ignoreplayers" )
 
@@ -55,10 +59,12 @@ function LambdaTeams:UpdateData()
     for k, v in pairs( LambdaTeams.TeamData ) do 
         if !LambdaTeams.RealTeams[ k ] then
             local teamID = ( LambdaTeams.RealTeamCount + 1 )
-            team_SetUp( teamID, k, ( v.color and v.color:ToColor() or Color( 255, 255, 100 ) ), false )
+            team_SetUp( teamID, k, ( v.color and v.color:ToColor() or defaultPlyClr ), false )
             
             LambdaTeams.RealTeams[ k ] = teamID
             LambdaTeams.RealTeamCount = teamID
+        else
+            team_SetColor( LambdaTeams.RealTeams[ k ], ( v.color and v.color:ToColor() or defaultPlyClr ) )
         end
     end
 end
@@ -174,15 +180,16 @@ if ( SERVER ) then
     util.AddNetworkString( "lambda_teamsystem_playclientsound" )
     util.AddNetworkString( "lambda_teamsystem_setplayerteam" )
     util.AddNetworkString( "lambda_teamsystem_updatedata" )
+    util.AddNetworkString( "lambda_teamsystem_sendupdateddata" )
 
     local CurTime = CurTime
     local GetNearestNavArea = navmesh.GetNearestNavArea
     local VectorRand = VectorRand
     local RandomPairs = RandomPairs
     local table_Random = table.Random
-    local table_Copy = table.Copy
-    local timer_Simple = timer.Simple
     local tobool = tobool
+
+    local rndBodyGroups = GetConVar( "lambdaplayers_lambda_allowrandomskinsandbodygroups" )
 
     net.Receive( "lambda_teamsystem_setplayerteam", function()
         local ply = net.ReadEntity()
@@ -198,7 +205,10 @@ if ( SERVER ) then
         end
     end )
 
-    net.Receive( "lambda_teamsystem_updatedata", LambdaTeams.UpdateData )
+    net.Receive( "lambda_teamsystem_updatedata", function()
+        LambdaTeams:UpdateData()
+        net.Start( "lambda_teamsystem_sendupdateddata" ); net.Broadcast()
+    end )
 
     local function OnTeamSystemDisable( name, oldVal, newVal )
         for _, ply in ipairs( ents_GetAll() ) do
@@ -228,7 +238,7 @@ if ( SERVER ) then
     cvars.RemoveChangeCallback( "lambdaplayers_teamsystem_enable", modulePrefix .. "OnSystemChanged" )
     cvars.AddChangeCallback( "lambdaplayers_teamsystem_enable", OnTeamSystemDisable, modulePrefix .. "OnSystemChanged" )
 
-    local function SetTeamToLambda( lambda, team, rndNoTeams, limit )
+    local function SetTeamToLambda( lambda, team, rndNoTeams, limit, useMdls )
         if !teamsEnabled:GetBool() then return end
 
         local teamTbl = LambdaTeams.TeamData
@@ -257,6 +267,29 @@ if ( SERVER ) then
         lambda:SetExternalVar( "l_TeamName", name )
         lambda:SetNW2String( "lambda_teamname", name )
         lambda:SetNWString( "lambda_teamname", name )
+
+        if useMdls == nil then useMdls = true end
+        if useMdls then
+            local plyMdls = teamData.playermdls
+            if plyMdls and #plyMdls > 0 then 
+                lambda:SetModel( plyMdls[ random( #plyMdls ) ] ) 
+
+                lambda.l_BodyGroupData = {}
+                if rndBodyGroups:GetBool() then
+                    for _, v in ipairs( lambda:GetBodyGroups() ) do
+                        local subMdls = #v.submodels
+                        if subMdls == 0 then continue end 
+
+                        local rndID = random( 0, subMdls )
+                        lambda:SetBodygroup( v.id, rndID )
+                        lambda.l_BodyGroupData[ v.id ] = rndID
+                    end
+
+                    local skinCount = lambda:SkinCount()
+                    if skinCount > 0 then lambda:SetSkin( random( 0, skinCount - 1 ) ) end
+                end
+            end
+        end
 
         local color = teamData.color
         lambda:SetExternalVar( "l_TeamColor", color:ToColor() )
@@ -287,7 +320,7 @@ if ( SERVER ) then
                 local ply = self:GetCreator()
                 if IsValid( ply ) then
                     self:SetExternalVar( "l_PlyNoTeamColor", self:GetPlyColor() )
-                    SetTeamToLambda( self, ply:GetInfo( "lambdaplayers_teamsystem_lambdateam" ), tobool( ply:GetInfo( "lambdaplayers_teamsystem_includenoteams" ) ), teamLimit:GetInt() ) 
+                    SetTeamToLambda( self, ply:GetInfo( "lambdaplayers_teamsystem_lambdateam" ), tobool( ply:GetInfo( "lambdaplayers_teamsystem_includenoteams" ) ), teamLimit:GetInt(), false ) 
                 end
             end
 
@@ -737,10 +770,10 @@ if ( CLIENT ) then
             return 
         end
 
-        local frame = LAMBDAPANELS:CreateFrame( "Lambda Team Editor", 500, 400 )
+        local frame = LAMBDAPANELS:CreateFrame( "Lambda Team Editor", 550, 550 )
 
         local leftpanel = LAMBDAPANELS:CreateBasicPanel( frame )
-        leftpanel:SetSize( 175, 200 )
+        leftpanel:SetSize( 225, 200 )
         leftpanel:Dock( LEFT )
 
         local teamlist = CreateVGUI( "DListView", leftpanel )
@@ -787,24 +820,25 @@ if ( CLIENT ) then
             conmenu:AddOption( "Cancel", function() end )
         end
 
-        local rightpanel = LAMBDAPANELS:CreateBasicPanel( frame )
+        local rightpanel = LAMBDAPANELS:CreateBasicPanel( frame, RIGHT )
         rightpanel:SetSize( 310, 200 )
-        rightpanel:Dock( RIGHT )
+
+        local mainscroll = LAMBDAPANELS:CreateScrollPanel( rightpanel, false, FILL )
 
         LAMBDAPANELS:CreateButton( rightpanel, BOTTOM, "Save Team", function()
             local compiledinfo = CompileSettings()
             if !compiledinfo then return end
 
-            local alreadyExists = false
+            local alreadyexists = false
             for _, v in ipairs( teamlist:GetLines() ) do
                 local info = v:GetSortValue( 1 )
                 if info.name == compiledinfo.name then 
                     v:SetSortValue( 1, compiledinfo ) 
-                    AddTextChat( "Edited team " .. compiledinfo.name .. "'s' data." )
-                    alreadyExists = true; break 
+                    AddTextChat( "Edited team " .. compiledinfo.name .. "'s data." )
+                    alreadyexists = true; break 
                 end
             end
-            if !alreadyExists then
+            if !alreadyexists then
                 local line = teamlist:AddLine( compiledinfo.name )
                 line:SetSortValue( 1, compiledinfo )
                 AddTextChat( "Saved " .. compiledinfo.name .. " to the team list." )
@@ -813,28 +847,96 @@ if ( CLIENT ) then
             PlayClientSound( "buttons/button15.wav" )
             LAMBDAPANELS:UpdateKeyValueFile( "lambdaplayers/teamlist.json", { [ compiledinfo.name ] = compiledinfo }, "json" )
 
-            net.Start( "lambda_teamsystem_updatedata" )
-            net.SendToServer()
+            net.Start( "lambda_teamsystem_updatedata" ); net.SendToServer()
+            net.Receive( "lambda_teamsystem_sendupdateddata", LambdaTeams.UpdateData )
         end )
 
         --
 
-        LAMBDAPANELS:CreateLabel( "Team Name", rightpanel, TOP )
-        local teamname = LAMBDAPANELS:CreateTextEntry( rightpanel, TOP, "Enter the team's name here" )
+        LAMBDAPANELS:CreateLabel( "Team Name", mainscroll, TOP )
+        local teamname = LAMBDAPANELS:CreateTextEntry( mainscroll, TOP, "Enter the team's name here" )
 
-        LAMBDAPANELS:CreateLabel( "Team Color", rightpanel, TOP )
-        local teamcolor = LAMBDAPANELS:CreateColorMixer( rightpanel, TOP )
+        LAMBDAPANELS:CreateLabel( "Team Color", mainscroll, TOP )
+        local teamcolor = LAMBDAPANELS:CreateColorMixer( mainscroll, TOP )
+
+        LAMBDAPANELS:CreateLabel( "Team Playermodels", mainscroll, TOP )
+        local teampmlist = CreateVGUI( "DListView", mainscroll )
+        teampmlist:SetSize( 300, 150 )
+        teampmlist:Dock( TOP )
+        teampmlist:AddColumn( "", 1 )
+
+        function teampmlist:DoDoubleClick( id )
+            teampmlist:RemoveLine( id )
+            PlayClientSound( "buttons/button15.wav" )
+        end
+
+        LAMBDAPANELS:CreateButton( mainscroll, TOP, "Add Playermodel", function()
+            local modelframe = LAMBDAPANELS:CreateFrame( "Team Playermodels", 800, 500 )
+            
+            local modelpanel = LAMBDAPANELS:CreateBasicPanel( modelframe, RIGHT )
+            modelpanel:SetSize( 350, 200 )
+
+            local modelpreview = CreateVGUI( "DModelPanel", modelframe )
+            modelpreview:SetSize( 400, 100 )
+            modelpreview:Dock( LEFT )
+
+            modelpreview:SetModel( "" )
+
+            function modelpreview:LayoutEntity( Entity )
+                Entity:SetAngles( Angle( 0, RealTime() * 20 % 360, 0 ) )
+            end
+
+            local modelscroll = LAMBDAPANELS:CreateScrollPanel( modelpanel, false, FILL )
+            local pmlist = CreateVGUI( "DIconLayout", modelscroll )
+            pmlist:Dock( FILL )
+            pmlist:SetSpaceY( 12 )
+            pmlist:SetSpaceX( 12 )
+
+            for k, v in SortedPairs( player_manager.AllValidModels() ) do
+                local modelbutton = pmlist:Add( "SpawnIcon" )
+                modelbutton:SetModel( v )
+
+                function modelbutton:DoClick()
+                    modelpreview:SetModel( modelbutton:GetModelName() )
+                    modelpreview:GetEntity().GetPlayerColor = function() return teamcolor:GetVector() end
+                end
+            end
+
+            LAMBDAPANELS:CreateButton( modelpanel, BOTTOM, "Select Model", function()
+                local selectedmodel = modelpreview:GetModel()
+
+                if !selectedmodel or selectedmodel == "" then
+                    AddTextChat( "You haven't selected any playermodel!" ) 
+                    PlayClientSound( "buttons/button10.wav" )
+                    return 
+                end
+
+                teampmlist:AddLine( selectedmodel )
+                PlayClientSound( "buttons/button15.wav" )
+
+                modelframe:Close()
+            end )
+        end )
 
         CompileSettings = function()
-            if teamname:GetText() == "" then 
+            local name = teamname:GetText()
+            if name == "" then 
                 AddTextChat( "No name is set for this team!" ) 
                 PlayClientSound( "buttons/button10.wav" )
                 return 
             end
 
+            local playermdls = nil
+            local pmlist = teampmlist:GetLines()
+            if #pmlist > 0 then
+                playermdls = {}
+                for _, v in ipairs( pmlist ) do playermdls[ #playermdls + 1 ] = v:GetValue( 1 ) end
+            end
+
             local infotable = {
-                name = teamname:GetText(),
-                color = teamcolor:GetVector()
+                name = name,
+                color = teamcolor:GetVector(),
+                playermdls = playermdls
             }
 
             return infotable
@@ -843,6 +945,10 @@ if ( CLIENT ) then
         ImportTeam = function( infotable )
             teamname:SetText( infotable.name or "" )
             teamcolor:SetVector( infotable.color or vec_white )
+
+            teampmlist:Clear()
+            local mdls = infotable.playermdls
+            if mdls then for _, v in ipairs( mdls ) do teampmlist:AddLine( v ) end end
         end
     end
 
