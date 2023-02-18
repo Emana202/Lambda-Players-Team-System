@@ -300,6 +300,8 @@ if ( SERVER ) then
 
         local teamID = LambdaTeams.RealTeams[ name ]
         if teamID then lambda:SetTeam( teamID ) end
+
+        lambda:SetExternalVar( "l_TeamWepRestrictions", teamData.weaponrestrictions )
     end
 
     local function OnPlayerSpawnedNPC( ply, npc )
@@ -499,6 +501,16 @@ if ( SERVER ) then
         end )
     end
 
+    local function LambdaCanSwitchWeapon( self, name, data )
+        if name == "none" or name == "physgun" then return end
+
+        local teamPerms = self.l_TeamWepRestrictions
+        if teamPerms and !teamPerms[ name ] then
+            if data.islethal and !self:HasLethalWeapon() then self:SwitchWeapon( table_Random( teamPerms ) ) end
+            return true 
+        end
+    end
+
     hook.Add( "PlayerSpawnedNPC", modulePrefix .. "OnPlayerSpawnedNPC", OnPlayerSpawnedNPC )
     hook.Add( "LambdaOnInitialize", modulePrefix .. "LambdaOnInitialize", LambdaOnInitialize )
     hook.Add( "LambdaPostRecreated", modulePrefix .. "LambdaPostRecreated", LambdaPostRecreated )
@@ -507,6 +519,7 @@ if ( SERVER ) then
     hook.Add( "LambdaOnInjured", modulePrefix .. "OnInjured", LambdaOnInjured )
     hook.Add( "LambdaOnOtherInjured", modulePrefix .. "OnOtherInjured", LambdaOnOtherInjured )
     hook.Add( "LambdaOnBeginMove", modulePrefix .. "OnBeginMove", LambdaOnBeginMove )
+    hook.Add( "LambdaCanSwitchWeapon", modulePrefix .. "LambdaCanSwitchWeapon", LambdaCanSwitchWeapon )
     hook.Add( "PlayerShouldTakeDamage", modulePrefix .. "OnPlayerShouldTakeDamage", OnPlayerShouldTakeDamage )
     hook.Add( "PlayerInitialSpawn", modulePrefix .. "OnPlayerInitialSpawn", OnPlayerInitialSpawn )
 
@@ -522,23 +535,13 @@ if ( CLIENT ) then
     local string_Replace = string.Replace
     local string_EndsWith = string.EndsWith
     local DrawText = draw.DrawText
-    local SimpleTextOutlined = draw.SimpleTextOutlined
     local ScrW = ScrW
     local ScrH = ScrH
     local TraceLine = util.TraceLine
     local table_IsEmpty = table.IsEmpty
     local AddHalo = halo.Add
-    local CreateVGUI = vgui.Create
-    local spairs = SortedPairs
-    local AddTextChat = chat.AddText
-    local DermaMenu = DermaMenu
-    local table_Merge = table.Merge
-    local AddNotification = notification.AddLegacy
-    local Clamp = math.Clamp
     local LerpVector = LerpVector
     local vec_white = Vector( 1, 1, 1 )
-    local GetAllValidPlayerModels = player_manager.AllValidModels
-    local TranslateToPlayerModelName = player_manager.TranslateToPlayerModelName
 
     local uiScale = GetConVar( "lambdaplayers_uiscale" )
 
@@ -765,6 +768,18 @@ if ( CLIENT ) then
     hook.Add( "LambdaGetDisplayColor", modulePrefix .. "LambdaGetDisplayColor", LambdaGetDisplayColor )
 
     ---
+    
+    local CreateVGUI = vgui.Create
+    local spairs = SortedPairs
+    local AddTextChat = chat.AddText
+    local DermaMenu = DermaMenu
+    local table_Merge = table.Merge
+    local table_Empty = table.Empty
+    local table_insert = table.insert
+    local AddNotification = notification.AddLegacy
+    local GetAllValidPlayerModels = player_manager.AllValidModels
+    local TranslateToPlayerModelName = player_manager.TranslateToPlayerModelName
+    local string_len = string.len
 
     local function OpenLambdaTeamPanel( ply )
         if !ply:IsSuperAdmin() then 
@@ -882,6 +897,59 @@ if ( CLIENT ) then
         LAMBDAPANELS:CreateLabel( "Team Color", mainscroll, TOP )
         local teamcolor = LAMBDAPANELS:CreateColorMixer( mainscroll, TOP )
 
+        local teamweaponrestrictions = {}
+        LAMBDAPANELS:CreateLabel( "Team Weapon Restrictions", mainscroll, TOP )
+        LAMBDAPANELS:CreateButton( mainscroll, TOP, "Edit Weapon Restrictions", function()
+            local weppermframe = LAMBDAPANELS:CreateFrame( "Weapon Restrictions", 800, 400 )
+            local weppermscroll = LAMBDAPANELS:CreateScrollPanel( weppermframe, true, FILL )
+
+            LAMBDAPANELS:CreateLabel( "Here you can mark weapons that the team will only be allowed to use.", weppermframe, TOP )
+            LAMBDAPANELS:CreateLabel( "Leaving all weapons un-checked will disable team weapon restrictions.", weppermframe, TOP )
+
+            local weaponcheckboxes = {}
+            for weporigin, _ in pairs( _LAMBDAPLAYERSWEAPONORIGINS ) do
+                local weppermscroll2 = LAMBDAPANELS:CreateScrollPanel( weppermscroll, false, LEFT )
+                weppermscroll2:SetSize( 250, 350 )
+                weppermscroll:AddPanel( weppermscroll2 )
+
+                LAMBDAPANELS:CreateLabel( "------ " .. weporigin .. " ------ ", weppermscroll2, TOP )
+
+                local togglestate = false
+                weaponcheckboxes[ weporigin ] = {}
+
+                LAMBDAPANELS:CreateButton( weppermscroll2, TOP, "Toggle " .. weporigin .. " Weapons", function()
+                    togglestate = !togglestate
+                    for _, v in ipairs( weaponcheckboxes[ weporigin ] ) do
+                        v[1]:SetChecked( togglestate )
+                    end
+                end )
+
+                for k, v in pairs( _LAMBDAPLAYERSWEAPONS ) do
+                    if v.origin == weporigin and k != "none" and k != "physgun" then
+                        local weprettyname = string_Replace( v.prettyname, "[" .. weporigin .. "] ", "" )
+                        local weppermcheckbox = LAMBDAPANELS:CreateCheckBox( weppermscroll2, TOP, ( teamweaponrestrictions[ k ] or false ), weprettyname )
+                        table_insert( weaponcheckboxes[ weporigin ], { weppermcheckbox, k } )
+                    end
+                end
+            end
+
+            LAMBDAPANELS:CreateButton( weppermscroll, BOTTOM, "Done", function()
+                table_Empty( teamweaponrestrictions )
+
+                for _, v in pairs( weaponcheckboxes ) do
+                    for _, j in ipairs( v ) do
+                        if !j[ 1 ]:GetChecked() then continue end
+                        teamweaponrestrictions[ j[ 2 ] ] = true
+                    end
+                end
+
+                AddNotification( "Updated team's weapon restrictions!", 0, 4 )
+                PlayClientSound( "buttons/button15.wav" )
+
+                weppermframe:Close()
+            end )
+        end )
+
         LAMBDAPANELS:CreateLabel( "Team Playermodels", mainscroll, TOP )
         local teampmlist = CreateVGUI( "DListView", mainscroll )
         teampmlist:SetSize( 300, 150 )
@@ -978,7 +1046,8 @@ if ( CLIENT ) then
             local infotable = {
                 name = name,
                 color = teamcolor:GetVector(),
-                playermdls = playermdls
+                playermdls = playermdls,
+                weaponrestrictions = ( !table_IsEmpty( teamweaponrestrictions ) and teamweaponrestrictions or nil )
             }
 
             return infotable
@@ -991,6 +1060,8 @@ if ( CLIENT ) then
             teampmlist:Clear()
             local mdls = infotable.playermdls
             if mdls then for _, v in ipairs( mdls ) do teampmlist:AddLine( v ) end end
+
+            teamweaponrestrictions = infotable.weaponrestrictions or {}
         end
     end
 
