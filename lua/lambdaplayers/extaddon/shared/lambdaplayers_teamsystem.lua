@@ -617,7 +617,7 @@ if ( CLIENT ) then
             local fadeOutEnd = kothIconFadeEndDist:GetInt()
             
             for _, koth in ipairs( ents_FindByClass( "lambda_koth_point" ) ) do
-                if IsValid( koth ) and !flag:IsDormant() then
+                if IsValid( koth ) and !koth:IsDormant() then
                     local iconPos = koth:WorldSpaceCenter()
 
                     hudTrTbl.start = eyePos
