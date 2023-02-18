@@ -915,16 +915,6 @@ if ( CLIENT ) then
             pmlist:SetSpaceY( 12 )
             pmlist:SetSpaceX( 12 )
 
-            for _, v in spairs( GetAllValidPlayerModels() ) do
-                local modelbutton = pmlist:Add( "SpawnIcon" )
-                modelbutton:SetModel( v )
-
-                function modelbutton:DoClick()
-                    modelpreview:SetModel( modelbutton:GetModelName() )
-                    modelpreview:GetEntity().GetPlayerColor = function() return teamcolor:GetVector() end
-                end
-            end
-
             LAMBDAPANELS:CreateButton( modelpanel, BOTTOM, "Select Model", function()
                 local selectedmodel = modelpreview:GetModel()
 
@@ -946,6 +936,28 @@ if ( CLIENT ) then
 
                 teampmlist:AddLine( selectedmodel )
             end )
+
+            local manualMdl = LAMBDAPANELS:CreateTextEntry( modelpanel, BOTTOM, "Enter here if you want to use a non-playermodel model" )
+
+            function manualMdl:OnChange()
+                local mdlPath = manualMdl:GetText()
+                
+                if file_Exists( mdlPath, "GAME" ) then
+                    modelpreview:SetModel( mdlPath )
+                    local mdlEnt = modelpreview:GetEntity()
+                    if IsValid( mdlEnt ) then modelpreview:GetEntity().GetPlayerColor = function() return teamcolor:GetVector() end end
+                end
+            end
+
+            for _, v in spairs( GetAllValidPlayerModels() ) do
+                local modelbutton = pmlist:Add( "SpawnIcon" )
+                modelbutton:SetModel( v )
+
+                function modelbutton:DoClick()
+                    manualMdl:SetValue( modelbutton:GetModelName() )
+                    manualMdl:OnChange()
+                end
+            end
         end )
 
         CompileSettings = function()
