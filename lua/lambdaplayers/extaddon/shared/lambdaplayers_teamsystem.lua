@@ -173,6 +173,7 @@ if ( SERVER ) then
 
     util.AddNetworkString( "lambda_teamsystem_playclientsound" )
     util.AddNetworkString( "lambda_teamsystem_setplayerteam" )
+    util.AddNetworkString( "lambda_teamsystem_updatedata" )
 
     local CurTime = CurTime
     local GetNearestNavArea = navmesh.GetNearestNavArea
@@ -196,6 +197,8 @@ if ( SERVER ) then
             ply.l_IsInLambdaTeam = false
         end
     end )
+
+    net.Receive( "lambda_teamsystem_updatedata", LambdaTeams.UpdateData )
 
     local function OnTeamSystemDisable( name, oldVal, newVal )
         for _, ply in ipairs( ents_GetAll() ) do
@@ -801,7 +804,6 @@ if ( CLIENT ) then
                     alreadyExists = true; break 
                 end
             end
-
             if !alreadyExists then
                 local line = teamlist:AddLine( compiledinfo.name )
                 line:SetSortValue( 1, compiledinfo )
@@ -810,6 +812,9 @@ if ( CLIENT ) then
 
             PlayClientSound( "buttons/button15.wav" )
             LAMBDAPANELS:UpdateKeyValueFile( "lambdaplayers/teamlist.json", { [ compiledinfo.name ] = compiledinfo }, "json" )
+
+            net.Start( "lambda_teamsystem_updatedata" )
+            net.SendToServer()
         end )
 
         --
