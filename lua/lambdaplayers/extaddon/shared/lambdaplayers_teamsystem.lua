@@ -376,7 +376,7 @@ if ( SERVER ) then
         end
 
         local flag = self.l_CTF_Flag
-        if IsValid( flag ) and self:InCombat() and ( self.l_HasFlag or flag:GetTeamName() != self.l_TeamName and self:IsInRange( flag, 384 ) and self:CanSee( flag ) ) then
+        if IsValid( flag ) and self:InCombat() and ( self.l_HasFlag or !flag.IsLambdaCaptureZone and flag:GetTeamName() != self.l_TeamName and self:IsInRange( flag, 384 ) and self:CanSee( flag ) ) then
             self.l_movepos = flag:GetPos()
         end
     end
