@@ -10,12 +10,13 @@ local ents_GetAll = ents.GetAll
 local ents_FindByClass = ents.FindByClass
 local table_Copy = table.Copy
 local timer_Simple = timer.Simple
+local file_Exists = file.Exists
 local modulePrefix = "Lambda_TeamSystem_"
 local defaultPlyClr = Color( 255, 255, 100 )
 
 local ignorePlys = GetConVar( "ai_ignoreplayers" )
 
-if SERVER and !file.Exists( "lambdaplayers/teamlist.json", "DATA" ) then
+if SERVER and !file_Exists( "lambdaplayers/teamlist.json", "DATA" ) then
     LAMBDAFS:WriteFile( "lambdaplayers/teamlist.json", {
         [ "Based Bros" ] = {
             name = "Based Bros",
@@ -532,11 +533,13 @@ if ( CLIENT ) then
     local AddTextChat = chat.AddText
     local DermaMenu = DermaMenu
     local table_Merge = table.Merge
-    local table_Empty = table.Empty
     local AddNotification = notification.AddLegacy
     local Clamp = math.Clamp
     local LerpVector = LerpVector
     local vec_white = Vector( 1, 1, 1 )
+    local GetAllValidPlayerModels = player_manager.AllValidModels
+    local TranslateToPlayerModelName = player_manager.TranslateToPlayerModelName
+
     local uiScale = GetConVar( "lambdaplayers_uiscale" )
 
     local nameTrTbl = {}
@@ -765,7 +768,7 @@ if ( CLIENT ) then
 
     local function OpenLambdaTeamPanel( ply )
         if !ply:IsSuperAdmin() then 
-            AddNotification( "You must be a Super Admin in order to use this!", 1, 4) 
+            AddNotification( "You must be a Super Admin in order to use this!", 1, 4 )
             PlayClientSound( "buttons/button10.wav" ) 
             return 
         end
@@ -782,9 +785,12 @@ if ( CLIENT ) then
 
         local CompileSettings
         local ImportTeam
+        local teams = {}
 
         LAMBDAPANELS:RequestDataFromServer( "lambdaplayers/teamlist.json", "json", function( data ) 
             if !data then return end
+
+            table_Merge( teams, data )
 
             for k, v in spairs( data ) do
                 local line = teamlist:AddLine( k )
@@ -824,6 +830,23 @@ if ( CLIENT ) then
         rightpanel:SetSize( 310, 200 )
 
         local mainscroll = LAMBDAPANELS:CreateScrollPanel( rightpanel, false, FILL )
+        
+        LAMBDAPANELS:CreateButton( rightpanel, BOTTOM, "Validate Teams", function()
+            local hasissue = false
+            
+            for k, v in pairs( teams ) do
+                local mdls = v.playermdls
+                if mdls and #mdls > 0 then
+                    for _, v in ipairs( mdls ) do
+                        if file_Exists( v, "GAME" ) then continue end
+                        hasissue = true 
+                        print( "Lambda Team Validation: Team " .. k .. " has an invalid playermodel! (" .. v .. ")" )
+                    end
+                end
+            end
+
+            AddTextChat( "Team Validation complete." .. ( hasissue and " Some issues were found. Check console for more details." or " No issues were found." ) )
+        end )
 
         LAMBDAPANELS:CreateButton( rightpanel, BOTTOM, "Save Team", function()
             local compiledinfo = CompileSettings()
@@ -892,7 +915,7 @@ if ( CLIENT ) then
             pmlist:SetSpaceY( 12 )
             pmlist:SetSpaceX( 12 )
 
-            for k, v in SortedPairs( player_manager.AllValidModels() ) do
+            for _, v in spairs( GetAllValidPlayerModels() ) do
                 local modelbutton = pmlist:Add( "SpawnIcon" )
                 modelbutton:SetModel( v )
 
@@ -906,22 +929,29 @@ if ( CLIENT ) then
                 local selectedmodel = modelpreview:GetModel()
 
                 if !selectedmodel or selectedmodel == "" then
-                    AddTextChat( "You haven't selected any playermodel!" ) 
+                    AddNotification( "You didn't select any playermodel!", 1, 4 )
                     PlayClientSound( "buttons/button10.wav" )
-                    return 
+                    return
+                end
+                for _, v in ipairs( teampmlist:GetLines() ) do
+                    if v:GetValue( 1 ) == selectedmodel then
+                        AddNotification( "Selected playermodel is already on the list!", 1, 4 )
+                        PlayClientSound( "buttons/button10.wav" )
+                        return
+                    end
                 end
 
-                teampmlist:AddLine( selectedmodel )
+                AddNotification( "Added " .. TranslateToPlayerModelName( selectedmodel ) ..  " to the playermodel list!", 0, 4 )
                 PlayClientSound( "buttons/button15.wav" )
 
-                modelframe:Close()
+                teampmlist:AddLine( selectedmodel )
             end )
         end )
 
         CompileSettings = function()
             local name = teamname:GetText()
             if name == "" then 
-                AddTextChat( "No name is set for this team!" ) 
+                AddNotification( "No team name is set for this team!", 1, 4 )
                 PlayClientSound( "buttons/button10.wav" )
                 return 
             end
