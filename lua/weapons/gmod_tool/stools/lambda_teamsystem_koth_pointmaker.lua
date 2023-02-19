@@ -71,13 +71,8 @@ function TOOL.BuildCPanel( panel )
 
 	function refresh:DoClick()
 		combo:Clear()
-		
 		local teamData = LAMBDAFS:ReadFile( "lambdaplayers/teamlist.json", "json" )
-    	local teamNames = { [ "None" ] = "" }
-    	for k, _ in pairs( teamData ) do teamNames[ k ] = k end
-
-	    for k, v in pairs( teamNames ) do
-	        combo:AddChoice( k, v )
-	    end
+    	teamData[ "None" ] = ""
+	    for k, _ in pairs( teamData ) do combo:AddChoice( k, k ) end
 	end
 end

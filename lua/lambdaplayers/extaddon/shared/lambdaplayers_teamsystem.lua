@@ -93,13 +93,15 @@ CreateLambdaConsoleCommand( "lambdaplayers_teamsystem_updateteamlist", function(
 end, true, "Refreshes the team list. Use this after editting teams in the team panel.", { name = "Refresh Team List", category = "Team System" } )
 
 CreateLambdaConvar( "lambdaplayers_teamsystem_includenoteams", 0, true, true, true, "When spawning a Lambda Player with random team, should they also have a chance to spawn without being assigned to any team?", 0, 1, { name = "Include Neutral To Random Teams", type = "Bool", category = "Team System" }  )
-local teamLimit     = CreateLambdaConvar( "lambdaplayers_teamsystem_teamlimit", 0, true, false, false, "The limit of how many members can be allowed to be assigned to each team. Set to zero for no limit.", 0, 50, { name = "Team Member Limit", type = "Slider", decimals = 0, category = "Team System" }  )
-local attackOthers  = CreateLambdaConvar( "lambdaplayers_teamsystem_attackotherteams", 0, true, false, false, "If Lambda Players should immediately start attacking the members of other teams at their sight.", 0, 1, { name = "Attack On Sight", type = "Bool", category = "Team System" } )
-local noFriendFire  = CreateLambdaConvar( "lambdaplayers_teamsystem_nofriendlyfire", 1, true, false, false, "If Lambda Players shouldn't be able to damage their teammates.", 0, 1, { name = "No Friendly Fire", type = "Bool", category = "Team System" } )
-local stickTogether = CreateLambdaConvar( "lambdaplayers_teamsystem_sticktogether", 1, true, false, false, "If Lambda Players should stick together with their teammates.", 0, 1, { name = "Stick Together", type = "Bool", category = "Team System" } )
-local huntDown      = CreateLambdaConvar( "lambdaplayers_teamsystem_huntdownotherteams", 0, true, false, false, "If Lambda Players should hunt down the members of other teams. 'Attack On Sight' option should be enabled for it to work.", 0, 1, { name = "Hunt Down Enemy Teams", type = "Bool", category = "Team System" } )
-local drawTeamName  = CreateLambdaConvar( "lambdaplayers_teamsystem_drawteamname", 1, true, true, false, "Enables drawing team names above your Lambda teammates.", 0, 1, { name = "Draw Team Names", type = "Bool", category = "Team System" } )
-local drawHalo      = CreateLambdaConvar( "lambdaplayers_teamsystem_drawhalo", 1, true, true, false, "Enables drawing halos around you Lambda Teammates", 0, 1, { name = "Draw Halos", type = "Bool", category = "Team System" } )
+local teamLimit         = CreateLambdaConvar( "lambdaplayers_teamsystem_teamlimit", 0, true, false, false, "The limit of how many members can be allowed to be assigned to each team. Set to zero for no limit.", 0, 50, { name = "Team Member Limit", type = "Slider", decimals = 0, category = "Team System" }  )
+local attackOthers      = CreateLambdaConvar( "lambdaplayers_teamsystem_attackotherteams", 0, true, false, false, "If Lambda Players should immediately start attacking the members of other teams at their sight.", 0, 1, { name = "Attack On Sight", type = "Bool", category = "Team System" } )
+local noFriendFire      = CreateLambdaConvar( "lambdaplayers_teamsystem_nofriendlyfire", 1, true, false, false, "If Lambda Players shouldn't be able to damage their teammates.", 0, 1, { name = "No Friendly Fire", type = "Bool", category = "Team System" } )
+local stickTogether     = CreateLambdaConvar( "lambdaplayers_teamsystem_sticktogether", 1, true, false, false, "If Lambda Players should stick together with their teammates.", 0, 1, { name = "Stick Together", type = "Bool", category = "Team System" } )
+local huntDown          = CreateLambdaConvar( "lambdaplayers_teamsystem_huntdownotherteams", 0, true, false, false, "If Lambda Players should hunt down the members of other teams. 'Attack On Sight' option should be enabled for it to work.", 0, 1, { name = "Hunt Down Enemy Teams", type = "Bool", category = "Team System" } )
+local useSpawnpoints    = CreateLambdaConvar( "lambdaplayers_teamsystem_usespawnpoints", 0, true, false, false, "If Lambda Players should spawn and respawn in one of their team's spawnpoints.", 0, 1, { name = "Respawn In Spawnpoints", type = "Bool", category = "Team System" } )
+local plyUseSpawnpoints = CreateLambdaConvar( "lambdaplayers_teamsystem_plyusespawnpoints", 0, true, true, true, "If when respawning, should you spawn in one of your Lambda Team's spawnpoints.", 0, 1, { name = "Respawn In Spawnpoints", type = "Bool", category = "Team System" } )
+local drawTeamName      = CreateLambdaConvar( "lambdaplayers_teamsystem_drawteamname", 1, true, true, false, "Enables drawing team names above your Lambda teammates.", 0, 1, { name = "Draw Team Names", type = "Bool", category = "Team System" } )
+local drawHalo          = CreateLambdaConvar( "lambdaplayers_teamsystem_drawhalo", 1, true, true, false, "Enables drawing halos around you Lambda Teammates", 0, 1, { name = "Draw Halos", type = "Bool", category = "Team System" } )
 
 CreateLambdaConvar( "lambdaplayers_teamsystem_koth_capturerate", 0.2, true, false, false, "The speed rate of capturing the KOTH Points.", 0.01, 5.0, { name = "Capture Rate", type = "Slider", decimals = 2, category = "Team System - KOTH" } )
 local kothCapRange = CreateLambdaConvar( "lambdaplayers_teamsystem_koth_capturerange", 500, true, false, false, "How close player should be to start capturing the point.", 100, 1000, { name = "Capture Range", type = "Slider", decimals = 0, category = "Team System - KOTH" } )
@@ -172,6 +174,17 @@ function LambdaTeams:GetTeamCount( teamName )
         if LambdaTeams:GetPlayerTeam( v ) == teamName and ( !v:IsPlayer() or !ignorePlys:GetBool() ) then count = count + 1 end
     end
     return count
+end
+
+function LambdaTeams:GetSpawnPoints( teamName )
+    local points = {}
+
+    for _, v in ipairs( ents_FindByClass( "lambda_teamspawnpoint" ) ) do
+        if !IsValid( v ) or v:GetSpawnTeam() != teamName then continue end
+        points[ #points + 1 ] = v
+    end
+
+    return points
 end
 
 ---
@@ -314,20 +327,31 @@ if ( SERVER ) then
         self:SetExternalVar( "l_PlyNoTeamColor", self:GetPlyColor() )
 
         self:SimpleTimer( 0.1, function()
-            if self.l_TeamName then return end
-
-            if self.l_MWSspawned then
-                self:SetExternalVar( "l_PlyNoTeamColor", self:GetPlyColor() )
-                SetTeamToLambda( self, mwsTeam:GetString(), incNoTeams:GetBool(), mwsTeamLimit:GetInt() )
-            else
-                local ply = self:GetCreator()
-                if IsValid( ply ) then
+            if !self.l_TeamName then
+                if self.l_MWSspawned then
                     self:SetExternalVar( "l_PlyNoTeamColor", self:GetPlyColor() )
-                    SetTeamToLambda( self, ply:GetInfo( "lambdaplayers_teamsystem_lambdateam" ), tobool( ply:GetInfo( "lambdaplayers_teamsystem_includenoteams" ) ), teamLimit:GetInt(), false ) 
+                    SetTeamToLambda( self, mwsTeam:GetString(), incNoTeams:GetBool(), mwsTeamLimit:GetInt() )
+                else
+                    local ply = self:GetCreator()
+                    if IsValid( ply ) then
+                        self:SetExternalVar( "l_PlyNoTeamColor", self:GetPlyColor() )
+                        SetTeamToLambda( self, ply:GetInfo( "lambdaplayers_teamsystem_lambdateam" ), tobool( ply:GetInfo( "lambdaplayers_teamsystem_includenoteams" ) ), teamLimit:GetInt(), false ) 
+                    end
                 end
+
+                if self.l_TeamColor then self:SetPlyColor( self.l_TeamColor:ToVector() ) end
             end
 
-            if self.l_TeamColor then self:SetPlyColor( self.l_TeamColor:ToVector() ) end
+            if self.l_TeamName and useSpawnpoints:GetBool() then
+                local spawnPoints = LambdaTeams:GetSpawnPoints( self.l_TeamName )
+                if #spawnPoints > 0 then 
+                    local spawnPoint = spawnPoints[ random( #spawnPoints ) ]
+                    for _, v in RandomPairs( spawnPoints ) do if !v.IsOccupied then spawnPoint = v end end
+
+                    self:SetPos( spawnPoint:GetPos() )
+                    self:SetAngles( spawnPoint:GetAngles() ) 
+                end
+            end
         end, true )
     end
 
@@ -384,7 +408,7 @@ if ( SERVER ) then
     end
     
     local function LambdaCanTarget( self, ent )
-        if self.l_HasFlag and ent.IsLambdaPlayer and ( !ent:InCombat() or ent:GetEnemy() != self ) then return true end
+        if self.l_HasFlag and ent.IsLambdaPlayer and ( !ent:InCombat() or ent:GetEnemy() != self or !ent:IsInRange( self, 1024 ) ) then return true end
         if teamsEnabled:GetBool() and LambdaTeams:AreTeammates( self, ent ) then return true end
     end
     
@@ -432,7 +456,7 @@ if ( SERVER ) then
 
         if self.l_TeamName then
             local ctfFlag = self.l_CTF_Flag
-            if !IsValid( ctfFlag ) or random( 1, 5 ) == 1 or self.l_HasFlag and !ctfFlag.IsLambdaCaptureZone or !self.l_HasFlag and ctfFlag.IsLambdaCaptureZone then
+            if !IsValid( ctfFlag ) or random( 1, 6 ) == 1 or self.l_HasFlag and !ctfFlag.IsLambdaCaptureZone or !self.l_HasFlag and ctfFlag.IsLambdaCaptureZone then
                 for _, flag in RandomPairs( ents_FindByClass( "lambda_ctf_flag" ) ) do
                     if IsValid( flag ) then
                         if !self.l_HasFlag then 
@@ -481,6 +505,30 @@ if ( SERVER ) then
         end
     end
 
+    local function LambdaCanSwitchWeapon( self, name, data )
+        if name == "none" or name == "physgun" then return end
+
+        local teamPerms = self.l_TeamWepRestrictions
+        if teamPerms and !teamPerms[ name ] then
+            if data.islethal and !self:HasLethalWeapon() then self:SwitchWeapon( table_Random( teamPerms ) ) end
+            return true 
+        end
+    end
+
+    local function LambdaOnRespawn( self )
+        local teamName = self.l_TeamName
+        if !teamName or !useSpawnpoints:GetBool() then return end
+
+        local spawnPoints = LambdaTeams:GetSpawnPoints( teamName )
+        if #spawnPoints > 0 then 
+            local spawnPoint = spawnPoints[ random( #spawnPoints ) ]
+            for _, v in RandomPairs( spawnPoints ) do if !v.IsOccupied then spawnPoint = v end end
+
+            self:SetPos( spawnPoint:GetPos() )
+            self:SetAngles( spawnPoint:GetAngles() )
+        end
+    end
+
     local function OnPlayerShouldTakeDamage( ply, attacker )
         if !attacker.IsLambdaPlayer or !teamsEnabled:GetBool() then return end
 
@@ -501,13 +549,19 @@ if ( SERVER ) then
         end )
     end
 
-    local function LambdaCanSwitchWeapon( self, name, data )
-        if name == "none" or name == "physgun" then return end
+    local function OnPlayerSpawn( ply, transition )
+        if transition or !tobool( ply:GetInfo( "lambdaplayers_teamsystem_plyusespawnpoints" ) ) then return end
 
-        local teamPerms = self.l_TeamWepRestrictions
-        if teamPerms and !teamPerms[ name ] then
-            if data.islethal and !self:HasLethalWeapon() then self:SwitchWeapon( table_Random( teamPerms ) ) end
-            return true 
+        local plyTeam = ply:GetInfo( "lambdaplayers_teamsystem_playerteam" )
+        if plyTeam == "" then return end
+
+        local spawnPoints = LambdaTeams:GetSpawnPoints( plyTeam )
+        if #spawnPoints > 0 then 
+            local spawnPoint = spawnPoints[ random( #spawnPoints ) ]
+            for _, v in RandomPairs( spawnPoints ) do if !v.IsOccupied then spawnPoint = v end end
+
+            ply:SetPos( spawnPoint:GetPos() )
+            ply:SetEyeAngles( spawnPoint:GetAngles() ) 
         end
     end
 
@@ -520,8 +574,10 @@ if ( SERVER ) then
     hook.Add( "LambdaOnOtherInjured", modulePrefix .. "OnOtherInjured", LambdaOnOtherInjured )
     hook.Add( "LambdaOnBeginMove", modulePrefix .. "OnBeginMove", LambdaOnBeginMove )
     hook.Add( "LambdaCanSwitchWeapon", modulePrefix .. "LambdaCanSwitchWeapon", LambdaCanSwitchWeapon )
+    hook.Add( "LambdaOnRespawn", modulePrefix .. "LambdaOnRespawn", LambdaOnRespawn )
     hook.Add( "PlayerShouldTakeDamage", modulePrefix .. "OnPlayerShouldTakeDamage", OnPlayerShouldTakeDamage )
     hook.Add( "PlayerInitialSpawn", modulePrefix .. "OnPlayerInitialSpawn", OnPlayerInitialSpawn )
+    hook.Add( "PlayerSpawn", modulePrefix .. "OnPlayerSpawn", OnPlayerSpawn )
 
 end
 
