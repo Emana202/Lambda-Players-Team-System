@@ -314,7 +314,20 @@ if ( SERVER ) then
         local teamID = LambdaTeams.RealTeams[ name ]
         if teamID then lambda:SetTeam( teamID ) end
 
-        lambda:SetExternalVar( "l_TeamWepRestrictions", teamData.weaponrestrictions )
+        local spawnHealth = teamData.spawnhealth
+        if spawnHealth then lambda:SetExternalVar( "l_TeamSpawnHealth", spawnHealth ) end
+
+        local spawnArmor = teamData.spawnarmor
+        if spawnArmor then lambda:SetExternalVar( "l_TeamSpawnArmor", spawnArmor ) end
+            
+        local wepRestrictions = teamData.weaponrestrictions
+        if wepRestrictions then
+            lambda:SetExternalVar( "l_TeamWepRestrictions", wepRestrictions )
+            if !wepRestrictions[ lambda.l_Weapon ] then 
+                local _, rndWep = table_Random( wepRestrictions )
+                lambda:SwitchWeapon( rndWep )
+            end
+        end
     end
 
     local function OnPlayerSpawnedNPC( ply, npc )
@@ -342,14 +355,28 @@ if ( SERVER ) then
                 if self.l_TeamColor then self:SetPlyColor( self.l_TeamColor:ToVector() ) end
             end
 
-            if self.l_TeamName and useSpawnpoints:GetBool() then
-                local spawnPoints = LambdaTeams:GetSpawnPoints( self.l_TeamName )
-                if #spawnPoints > 0 then 
-                    local spawnPoint = spawnPoints[ random( #spawnPoints ) ]
-                    for _, v in RandomPairs( spawnPoints ) do if !v.IsOccupied then spawnPoint = v end end
+            if self.l_TeamName then 
+                if useSpawnpoints:GetBool() then
+                    local spawnPoints = LambdaTeams:GetSpawnPoints( self.l_TeamName )
+                    if #spawnPoints > 0 then 
+                        local spawnPoint = spawnPoints[ random( #spawnPoints ) ]
+                        for _, v in RandomPairs( spawnPoints ) do if !v.IsOccupied then spawnPoint = v end end
 
-                    self:SetPos( spawnPoint:GetPos() )
-                    self:SetAngles( spawnPoint:GetAngles() ) 
+                        self:SetPos( spawnPoint:GetPos() )
+                        self:SetAngles( spawnPoint:GetAngles() ) 
+                    end
+                end
+
+                local spawnHealth = self.l_TeamSpawnHealth
+                if spawnHealth then 
+                    self:SetHealth( spawnHealth )
+                    if spawnHealth > self:GetMaxHealth() then self:SetMaxHealth( spawnHealth ) end
+                end
+
+                local spawnArmor = self.l_TeamSpawnArmor
+                if spawnArmor then 
+                    self:SetArmor( spawnArmor )
+                    if spawnArmor > self:GetMaxArmor() then self:SetMaxArmor( spawnArmor ) end
                 end
             end
         end, true )
@@ -373,6 +400,22 @@ if ( SERVER ) then
             self:SetPlyColor( self.l_PlyNoTeamColor )
         else
             self:SetPlyColor( self.l_TeamColor:ToVector() )
+        end
+    end
+
+    local function LambdaOnRespawn( self )
+        local teamName = self.l_TeamName
+        if !teamName or !teamsEnabled:GetBool() then return end
+
+        if useSpawnpoints:GetBool() then
+            local spawnPoints = LambdaTeams:GetSpawnPoints( teamName )
+            if #spawnPoints > 0 then 
+                local spawnPoint = spawnPoints[ random( #spawnPoints ) ]
+                for _, v in RandomPairs( spawnPoints ) do if !v.IsOccupied then spawnPoint = v end end
+
+                self:SetPos( spawnPoint:GetPos() )
+                self:SetAngles( spawnPoint:GetAngles() )
+            end
         end
     end
 
@@ -506,26 +549,16 @@ if ( SERVER ) then
     end
 
     local function LambdaCanSwitchWeapon( self, name, data )
-        if name == "none" or name == "physgun" then return end
+        if name == "none" or name == "physgun" or !self.l_TeamName or !teamsEnabled:GetBool() then return end
 
         local teamPerms = self.l_TeamWepRestrictions
         if teamPerms and !teamPerms[ name ] then
-            if data.islethal and !self:HasLethalWeapon() then self:SwitchWeapon( table_Random( teamPerms ) ) end
+            if data.islethal and !self:HasLethalWeapon() then 
+                local _, rndWep = table_Random( teamPerms )
+                self:SwitchWeapon( rndWep )
+            end
+
             return true 
-        end
-    end
-
-    local function LambdaOnRespawn( self )
-        local teamName = self.l_TeamName
-        if !teamName or !useSpawnpoints:GetBool() then return end
-
-        local spawnPoints = LambdaTeams:GetSpawnPoints( teamName )
-        if #spawnPoints > 0 then 
-            local spawnPoint = spawnPoints[ random( #spawnPoints ) ]
-            for _, v in RandomPairs( spawnPoints ) do if !v.IsOccupied then spawnPoint = v end end
-
-            self:SetPos( spawnPoint:GetPos() )
-            self:SetAngles( spawnPoint:GetAngles() )
         end
     end
 
@@ -568,13 +601,13 @@ if ( SERVER ) then
     hook.Add( "PlayerSpawnedNPC", modulePrefix .. "OnPlayerSpawnedNPC", OnPlayerSpawnedNPC )
     hook.Add( "LambdaOnInitialize", modulePrefix .. "LambdaOnInitialize", LambdaOnInitialize )
     hook.Add( "LambdaPostRecreated", modulePrefix .. "LambdaPostRecreated", LambdaPostRecreated )
+    hook.Add( "LambdaOnRespawn", modulePrefix .. "LambdaOnRespawn", LambdaOnRespawn )
     hook.Add( "LambdaOnThink", modulePrefix .. "OnThink", LambdaOnThink )
     hook.Add( "LambdaCanTarget", modulePrefix .. "OnCanTarget", LambdaCanTarget )
     hook.Add( "LambdaOnInjured", modulePrefix .. "OnInjured", LambdaOnInjured )
     hook.Add( "LambdaOnOtherInjured", modulePrefix .. "OnOtherInjured", LambdaOnOtherInjured )
     hook.Add( "LambdaOnBeginMove", modulePrefix .. "OnBeginMove", LambdaOnBeginMove )
     hook.Add( "LambdaCanSwitchWeapon", modulePrefix .. "LambdaCanSwitchWeapon", LambdaCanSwitchWeapon )
-    hook.Add( "LambdaOnRespawn", modulePrefix .. "LambdaOnRespawn", LambdaOnRespawn )
     hook.Add( "PlayerShouldTakeDamage", modulePrefix .. "OnPlayerShouldTakeDamage", OnPlayerShouldTakeDamage )
     hook.Add( "PlayerInitialSpawn", modulePrefix .. "OnPlayerInitialSpawn", OnPlayerInitialSpawn )
     hook.Add( "PlayerSpawn", modulePrefix .. "OnPlayerSpawn", OnPlayerSpawn )
@@ -836,6 +869,7 @@ if ( CLIENT ) then
     local GetAllValidPlayerModels = player_manager.AllValidModels
     local TranslateToPlayerModelName = player_manager.TranslateToPlayerModelName
     local string_len = string.len
+    local Round = math.Round
 
     local function OpenLambdaTeamPanel( ply )
         if !ply:IsSuperAdmin() then 
@@ -952,6 +986,9 @@ if ( CLIENT ) then
 
         LAMBDAPANELS:CreateLabel( "Team Color", mainscroll, TOP )
         local teamcolor = LAMBDAPANELS:CreateColorMixer( mainscroll, TOP )
+
+        local spawnhealth = LAMBDAPANELS:CreateNumSlider( mainscroll, TOP, 100, "Spawn Health", 1, 1000, 0 )
+        local spawnarmor = LAMBDAPANELS:CreateNumSlider( mainscroll, TOP, 0, "Spawn Armor", 0, 1000, 0 )
 
         local teamweaponrestrictions = {}
         LAMBDAPANELS:CreateLabel( "Team Weapon Restrictions", mainscroll, TOP )
@@ -1099,9 +1136,17 @@ if ( CLIENT ) then
                 for _, v in ipairs( pmlist ) do playermdls[ #playermdls + 1 ] = v:GetValue( 1 ) end
             end
 
+            local health = Round( spawnhealth:GetValue(), 0 )
+            if health == 100 then health = nil end
+
+            local armor = Round( spawnarmor:GetValue(), 0 )
+            if armor == 0 then armor = nil end
+
             local infotable = {
                 name = name,
                 color = teamcolor:GetVector(),
+                spawnhealth = health,
+                spawnarmor = armor,
                 playermdls = playermdls,
                 weaponrestrictions = ( !table_IsEmpty( teamweaponrestrictions ) and teamweaponrestrictions or nil )
             }
@@ -1112,6 +1157,9 @@ if ( CLIENT ) then
         ImportTeam = function( infotable )
             teamname:SetText( infotable.name or "" )
             teamcolor:SetVector( infotable.color or vec_white )
+            
+            spawnhealth:SetValue( infotable.spawnhealth or 100 )
+            spawnarmor:SetValue( infotable.spawnarmor or 0 )
 
             teampmlist:Clear()
             local mdls = infotable.playermdls
