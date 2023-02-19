@@ -449,7 +449,7 @@ if ( SERVER ) then
             self.l_KOTH_Entity = kothEnt
             local capRange = kothCapRange:GetInt()
             local area = GetNearestNavArea( kothEnt:GetPos(), false, capRange )
-            self:SetRun( random( 1, 3 ) != 1 and !self:IsInRange( kothEnt, capRange ) )
+            self:SetRun( random( 1, 3 ) != 1 and ( !self:IsInRange( kothEnt, capRange ) or !self:CanSee( kothEnt ) ) )
             self:RecomputePath( IsValid( area ) and area:GetRandomPoint() or ( kothEnt:GetPos() + VectorRand( -capRange, capRange ) ) )
             return
         end

@@ -126,6 +126,7 @@ if ( SERVER ) then
 						local capTeamClr = self:GetCapturerTeamColor( ent )
 						
 						self:SetContesterTeam( entTeam )
+			            self.OldColor = self:GetCapturerColor()
 						self:SetContesterColor( capTeamClr )
 
 						if capPerc < 100 then
