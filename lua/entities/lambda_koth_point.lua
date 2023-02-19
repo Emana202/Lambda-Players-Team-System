@@ -28,6 +28,7 @@ if ( SERVER ) then
 	local ignorePlys = GetConVar( "ai_ignoreplayers" )
 	local Clamp = math.Clamp
 	local Round = math.Round
+	local Rand = math.Rand
 	local net = net
 	local keynames = { "A", "B", "C", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z" }
 	
@@ -100,6 +101,11 @@ if ( SERVER ) then
 					if self:GetIsCaptured() then
 						if entTeam != capName then
 			                if capPerc <= 0 then
+			        			for _, lambda in ipairs( GetLambdaPlayers() ) do
+						            if lambda:GetIsDead() or self:GetCapturerTeamName( lambda ) != capName or random( 1, 100 ) > lambda:GetVoiceChance() / 2 then continue end
+						            lambda:SimpleTimer( Rand( 0.1, 1.0 ), function() lambda:PlaySoundFile( lambda:GetVoiceLine( "death" ) ) end )
+						        end
+
 			                    self:SetIsCaptured( false )
 			                    self:SetCapturePercent( 0 )
 			                    self:SetCapturerName( "Neutral" )
@@ -126,11 +132,8 @@ if ( SERVER ) then
 					    	self:SetCapturePercent( Clamp( capPerc + capRate, 0, 100 ) )
 						else
 					        for _, lambda in ipairs( GetLambdaPlayers() ) do
-					            if !lambda:GetIsDead() and random( 1, 100 ) <= lambda:GetVoiceChance() / 2 then
-					                lambda:SimpleTimer( Rand( 0.1, 1.0 ), function()
-					                    lambda:PlaySoundFile( lambda:GetVoiceLine( self:GetCapturerTeamName( lambda ) == self:GetCapturerName() and "death" or ( random( 1, 4 ) == 1 and "taunt" or "kill" ) ) )
-					                end )
-					            end
+					            if lambda:GetIsDead() or self:GetCapturerTeamName( lambda ) != entTeam or ent != lambda and random( 1, 100 ) > lambda:GetVoiceChance() / 2 then continue end
+					            lambda:SimpleTimer( Rand( 0.1, 1.0 ), function() lambda:PlaySoundFile( lambda:GetVoiceLine( "kill" ) ) end )
 					        end
 
 			                self:SetIsCaptured( true )

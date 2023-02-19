@@ -122,19 +122,29 @@ if ( SERVER ) then
             LambdaPlayers_ChatAdd( nil, self.FlagHolderColor, self.FlagHolderName, color_glacier, " captured the ", teamColor, flagName, color_glacier, " flag!" )
         end
 
+        local flagHolderTeam = self.FlagHolderTeam
         net.Start( "lambda_teamsystem_playclientsound" )
             net.WriteString( "lambdaplayers_teamsystem_ctf_snd_oncapture_" )
             net.WriteBool( true )
             net.WriteString( self.FlagHolderTeam )
             net.WriteString( teamName )
         net.Broadcast()
-
+        
+        local flagHolder = self:GetFlagHolderEnt()
         for _, lambda in ipairs( GetLambdaPlayers() ) do
-            if !lambda:GetIsDead() and random( 1, 100 ) <= lambda:GetVoiceChance() / 2 then
-                lambda:SimpleTimer( Rand( 0.1, 1.0 ), function()
-                    lambda:PlaySoundFile( lambda:GetVoiceLine( lambda.l_TeamName == teamName and "death" or ( random( 1, 4 ) == 1 and "taunt" or "kill" ) ) )
-                end )
+            if lambda:GetIsDead() or flagHolder != lambda and random( 1, 100 ) > lambda:GetVoiceChance() then continue end
+
+            local voiceLine = nil
+            local lambdaTeam = lambda.l_TeamName
+            
+            if lambdaTeam == teamName then
+                voiceLine = "death"
+            elseif lambdaTeam == flagHolderTeam then
+                voiceLine = ( ( flagHolder != lambda and random( 1, 3 ) == 1 ) and "assist" or "kill" )
             end
+
+            if !voiceLine then continue end
+            lambda:SimpleTimer( Rand( 0.1, 1.0 ), function() lambda:PlaySoundFile( lambda:GetVoiceLine( voiceLine ) ) end )
         end
 
         self:ReturnToZone()
@@ -203,6 +213,11 @@ if ( SERVER ) then
                 else
                     LambdaPlayers_ChatAdd( nil, teamColor, flagName, color_glacier, " flag has been dropped!")
                 end
+                
+                for _, lambda in ipairs( GetLambdaPlayers() ) do
+                    if lambda:GetIsDead() or lambda.l_TeamName != teamName or random( 1, 100 ) > lambda:GetVoiceChance() / 2 then continue end
+                    lambda:SimpleTimer( Rand( 0.1, 1.0 ), function() lambda:PlaySoundFile( lambda:GetVoiceLine( "assist" ) ) end )
+                end
 
                 net.Start( "lambda_teamsystem_playclientsound" )
                     net.WriteString( "lambdaplayers_teamsystem_ctf_snd_ondrop" )
@@ -236,12 +251,21 @@ if ( SERVER ) then
                                 LambdaPlayers_ChatAdd( nil, self.FlagHolderColor, self.FlagHolderName, color_glacier, " took the ", teamColor, flagName, color_glacier, " flag!" )
                             end
 
+                            local holderTeam = self.FlagHolderTeam
                             for _, lambda in ipairs( GetLambdaPlayers() ) do
-                                if lambda.l_TeamName == teamName and !lambda:GetIsDead() and random( 1, 100 ) <= lambda:GetVoiceChance() / 2 then
-                                    lambda:SimpleTimer( Rand( 0.1, 1.0 ), function()
-                                        lambda:PlaySoundFile( lambda:GetVoiceLine( "panic" ) )
-                                    end )
+                                if lambda:GetIsDead() or ent != lambda and random( 1, 100 ) > lambda:GetVoiceChance() / 3 then continue end
+
+                                local voiceLine = nil
+                                local lambdaTeam = lambda.l_TeamName
+
+                                if lambdaTeam == teamName then
+                                    voiceLine = "panic"
+                                elseif lambdaTeam == holderTeam then
+                                    voiceLine = "taunt" 
                                 end
+
+                                if !voiceLine then continue end
+                                lambda:SimpleTimer( Rand( 0.1, 1.0 ), function() lambda:PlaySoundFile( lambda:GetVoiceLine( voiceLine ) ) end )
                             end
 
                             net.Start( "lambda_teamsystem_playclientsound" )
