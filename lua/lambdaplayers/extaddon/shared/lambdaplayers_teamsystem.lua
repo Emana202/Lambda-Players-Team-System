@@ -42,30 +42,34 @@ LambdaTeams = LambdaTeams or {}
 function LambdaTeams:UpdateData()
     local teamList = LAMBDAFS:ReadFile( "lambdaplayers/teamlist.json", "json" )
     if table_Count( teamList ) == 0 then print( "LAMBDA TEAM SYSTEM WARNING: THERE ARE NO TEAMS REGISTERED!" ) return end
-    LambdaTeams.TeamData = teamList
     
-    if ( CLIENT ) then
-        LambdaTeams.TeamOptions = { [ "None" ] = "" }
-        LambdaTeams.TeamOptionsRandom = { [ "None" ] = "", [ "Random" ] = "random" }
-
-        for k, _ in pairs( LambdaTeams.TeamData ) do 
-            LambdaTeams.TeamOptions[ k ] = k 
-            LambdaTeams.TeamOptionsRandom[ k ] = k
-        end
-    end
-
+    LambdaTeams.TeamData = teamList
     LambdaTeams.RealTeams = LambdaTeams.RealTeams or {}
     LambdaTeams.RealTeamCount = LambdaTeams.RealTeamCount or 0
 
-    for k, v in pairs( LambdaTeams.TeamData ) do 
-        if !LambdaTeams.RealTeams[ k ] then
-            local teamID = ( LambdaTeams.RealTeamCount + 1 )
-            team_SetUp( teamID, k, ( v.color and v.color:ToColor() or defaultPlyClr ), false )
-            
-            LambdaTeams.RealTeams[ k ] = teamID
+    if ( CLIENT ) then
+        LambdaTeams.TeamOptions = { [ "None" ] = "" }
+        LambdaTeams.TeamOptionsRandom = { [ "None" ] = "", [ "Random" ] = "random" }
+    end
+
+    local teamID = ( LambdaTeams.RealTeamCount + 1 )
+    for name, data in pairs( LambdaTeams.TeamData ) do 
+        if ( CLIENT ) then
+            LambdaTeams.TeamOptions[ name ] = name 
+            LambdaTeams.TeamOptionsRandom[ name ] = name
+        end
+
+        local teamClr = data.color
+        teamClr = ( teamClr and teamClr:ToColor() or defaultPlyClr )
+
+        if !LambdaTeams.RealTeams[ name ] then
+            team_SetUp( teamID, name, teamClr, false )
+            LambdaTeams.RealTeams[ name ] = teamID
+
+            teamID = teamID + 1
             LambdaTeams.RealTeamCount = teamID
         else
-            team_SetColor( LambdaTeams.RealTeams[ k ], ( v.color and v.color:ToColor() or defaultPlyClr ) )
+            team_SetColor( LambdaTeams.RealTeams[ name ], teamClr )
         end
     end
 end
@@ -84,9 +88,10 @@ local playerTeam    = CreateLambdaConvar( "lambdaplayers_teamsystem_playerteam",
 CreateLambdaConsoleCommand( "lambdaplayers_teamsystem_updateteamlist", function( ply ) 
     LambdaTeams:UpdateData()
 
-    for _, v in ipairs( _LAMBDAConVarSettings ) do
-        if v.name == "Player Team" then v.options = LambdaTeams.TeamOptions end
-        if v.name == "Lambda Team" then v.options = LambdaTeams.TeamOptionsRandom end
+    for _, option in ipairs( _LAMBDAConVarSettings ) do
+        local name = option.name
+        if name == "Player Team" then v.options = LambdaTeams.TeamOptions end
+        if name == "Lambda Team" then v.options = LambdaTeams.TeamOptionsRandom end
     end
 
     ply:ConCommand( "spawnmenu_reload" )
@@ -170,18 +175,22 @@ end
 
 function LambdaTeams:GetTeamCount( teamName )
     local count = 0
-    for _, v in ipairs( ents_GetAll() ) do
-        if LambdaTeams:GetPlayerTeam( v ) == teamName and ( !v:IsPlayer() or !ignorePlys:GetBool() ) then count = count + 1 end
+    
+    for _, ply in ipairs( ents_GetAll() ) do
+        if LambdaTeams:GetPlayerTeam( ply ) == teamName and ( !ply:IsPlayer() or !ignorePlys:GetBool() ) then 
+            count = count + 1 
+        end
     end
+    
     return count
 end
 
 function LambdaTeams:GetSpawnPoints( teamName )
     local points = {}
 
-    for _, v in ipairs( ents_FindByClass( "lambda_teamspawnpoint" ) ) do
-        if !IsValid( v ) or v:GetSpawnTeam() != teamName then continue end
-        points[ #points + 1 ] = v
+    for _, point in ipairs( ents_FindByClass( "lambda_teamspawnpoint" ) ) do
+        if !IsValid( point ) or point:GetSpawnTeam() != teamName then continue end
+        points[ #points + 1 ] = point
     end
 
     return points
@@ -258,9 +267,9 @@ if ( SERVER ) then
         local teamTbl = LambdaTeams.TeamData
         if limit and limit > 0 then
             teamTbl = table_Copy( teamTbl )
-            for k, _ in pairs( teamTbl ) do
-                if LambdaTeams:GetTeamCount( k ) < limit then continue end
-                teamTbl[ k ] = nil
+            for name, _ in pairs( teamTbl ) do
+                if LambdaTeams:GetTeamCount( name ) < limit then continue end
+                teamTbl[ name ] = nil
             end
         end
 
@@ -290,13 +299,13 @@ if ( SERVER ) then
 
                 lambda.l_BodyGroupData = {}
                 if rndBodyGroups:GetBool() then
-                    for _, v in ipairs( lambda:GetBodyGroups() ) do
-                        local subMdls = #v.submodels
+                    for _, bg in ipairs( lambda:GetBodyGroups() ) do
+                        local subMdls = #bg.submodels
                         if subMdls == 0 then continue end 
 
                         local rndID = random( 0, subMdls )
-                        lambda:SetBodygroup( v.id, rndID )
-                        lambda.l_BodyGroupData[ v.id ] = rndID
+                        lambda:SetBodygroup( bg.id, rndID )
+                        lambda.l_BodyGroupData[ bg.id ] = rndID
                     end
 
                     local skinCount = lambda:SkinCount()
@@ -314,12 +323,10 @@ if ( SERVER ) then
         local teamID = LambdaTeams.RealTeams[ name ]
         if teamID then lambda:SetTeam( teamID ) end
 
-        local spawnHealth = teamData.spawnhealth
-        if spawnHealth then lambda:SetExternalVar( "l_TeamSpawnHealth", spawnHealth ) end
+        lambda:SetExternalVar( "l_TeamSpawnHealth", teamData.spawnhealth )
+        lambda:SetExternalVar( "l_TeamSpawnArmor", teamData.spawnarmor )
+        lambda:SetExternalVar( "l_TeamVoiceProfile", teamData.voiceprofile )
 
-        local spawnArmor = teamData.spawnarmor
-        if spawnArmor then lambda:SetExternalVar( "l_TeamSpawnArmor", spawnArmor ) end
-            
         local wepRestrictions = teamData.weaponrestrictions
         if wepRestrictions then
             lambda:SetExternalVar( "l_TeamWepRestrictions", wepRestrictions )
@@ -360,7 +367,7 @@ if ( SERVER ) then
                     local spawnPoints = LambdaTeams:GetSpawnPoints( self.l_TeamName )
                     if #spawnPoints > 0 then 
                         local spawnPoint = spawnPoints[ random( #spawnPoints ) ]
-                        for _, v in RandomPairs( spawnPoints ) do if !v.IsOccupied then spawnPoint = v end end
+                        for _, point in RandomPairs( spawnPoints ) do if !point.IsOccupied then spawnPoint = point end end
 
                         self:SetPos( spawnPoint:GetPos() )
                         self:SetAngles( spawnPoint:GetAngles() ) 
@@ -377,6 +384,12 @@ if ( SERVER ) then
                 if spawnArmor then 
                     self:SetArmor( spawnArmor )
                     if spawnArmor > self:GetMaxArmor() then self:SetMaxArmor( spawnArmor ) end
+                end
+
+                local voiceProfile = self.l_TeamVoiceProfile
+                if voiceProfile then 
+                    self.l_VoiceProfile = voiceProfile
+                    self:SetNW2String( "lambda_vp", voiceProfile )
                 end
             end
         end, true )
@@ -411,7 +424,7 @@ if ( SERVER ) then
             local spawnPoints = LambdaTeams:GetSpawnPoints( teamName )
             if #spawnPoints > 0 then 
                 local spawnPoint = spawnPoints[ random( #spawnPoints ) ]
-                for _, v in RandomPairs( spawnPoints ) do if !v.IsOccupied then spawnPoint = v end end
+                for _, point in RandomPairs( spawnPoints ) do if !point.IsOccupied then spawnPoint = point end end
 
                 self:SetPos( spawnPoint:GetPos() )
                 self:SetAngles( spawnPoint:GetAngles() )
@@ -591,7 +604,7 @@ if ( SERVER ) then
         local spawnPoints = LambdaTeams:GetSpawnPoints( plyTeam )
         if #spawnPoints > 0 then 
             local spawnPoint = spawnPoints[ random( #spawnPoints ) ]
-            for _, v in RandomPairs( spawnPoints ) do if !v.IsOccupied then spawnPoint = v end end
+            for _, point in RandomPairs( spawnPoints ) do if !point.IsOccupied then spawnPoint = point end end
 
             ply:SetPos( spawnPoint:GetPos() )
             ply:SetEyeAngles( spawnPoint:GetAngles() ) 
@@ -897,16 +910,16 @@ if ( CLIENT ) then
 
             table_Merge( teams, data )
 
-            for k, v in spairs( data ) do
-                local line = teamlist:AddLine( k )
-                line:SetSortValue( 1, v )
+            for name, data in spairs( data ) do
+                local line = teamlist:AddLine( name )
+                line:SetSortValue( 1, data )
             end
         end )
 
         local function UpdateTeamLine( teamname, newinfo )
-            for _, v in ipairs( teamlist:GetLines() ) do
-                local info = v:GetSortValue( 1 )
-                if info.name == teamname then v:SetSortValue( 1, newinfo ) return end
+            for _, line in ipairs( teamlist:GetLines() ) do
+                local info = line:GetSortValue( 1 )
+                if info.name == teamname then line:SetSortValue( 1, newinfo ) return end
             end
 
             local line = teamlist:AddLine( teamname )
@@ -923,10 +936,13 @@ if ( CLIENT ) then
             local info = line:GetSortValue( 1 )
 
             conmenu:AddOption( "Delete " .. info.name .. "?", function()
-                LAMBDAPANELS:RemoveVarFromKVFile( "lambdaplayers/teamlist.json", info.name, "json" ) 
                 AddTextChat( "Deleted " .. info.name .. " from the team list.")
                 PlayClientSound( "buttons/button15.wav" )
                 teamlist:RemoveLine( id )
+                
+                LAMBDAPANELS:RemoveVarFromKVFile( "lambdaplayers/teamlist.json", info.name, "json" ) 
+                net.Start( "lambda_teamsystem_updatedata" ); net.SendToServer()
+                net.Receive( "lambda_teamsystem_sendupdateddata", LambdaTeams.UpdateData )
             end )
             conmenu:AddOption( "Cancel", function() end )
         end
@@ -939,13 +955,12 @@ if ( CLIENT ) then
         LAMBDAPANELS:CreateButton( rightpanel, BOTTOM, "Validate Teams", function()
             local hasissue = false
             
-            for k, v in pairs( teams ) do
-                local mdls = v.playermdls
+            for name, data in pairs( teams ) do
+                local mdls = data.playermdls
                 if mdls and #mdls > 0 then
-                    for _, v in ipairs( mdls ) do
-                        if file_Exists( v, "GAME" ) then continue end
-                        hasissue = true 
-                        print( "Lambda Team Validation: Team " .. k .. " has an invalid playermodel! (" .. v .. ")" )
+                    for _, mdl in ipairs( mdls ) do
+                        if file_Exists( mdl, "GAME" ) then continue end
+                        hasissue = true; print( "Lambda Team Validation: Team " .. name .. " has an invalid playermodel! (" .. mdl .. ")" )
                     end
                 end
             end
@@ -958,10 +973,10 @@ if ( CLIENT ) then
             if !compiledinfo then return end
 
             local alreadyexists = false
-            for _, v in ipairs( teamlist:GetLines() ) do
-                local info = v:GetSortValue( 1 )
+            for _, line in ipairs( teamlist:GetLines() ) do
+                local info = line:GetSortValue( 1 )
                 if info.name == compiledinfo.name then 
-                    v:SetSortValue( 1, compiledinfo ) 
+                    line:SetSortValue( 1, compiledinfo ) 
                     AddTextChat( "Edited team " .. compiledinfo.name .. "'s data." )
                     alreadyexists = true; break 
                 end
@@ -987,65 +1002,9 @@ if ( CLIENT ) then
         LAMBDAPANELS:CreateLabel( "Team Color", mainscroll, TOP )
         local teamcolor = LAMBDAPANELS:CreateColorMixer( mainscroll, TOP )
 
-        local spawnhealth = LAMBDAPANELS:CreateNumSlider( mainscroll, TOP, 100, "Spawn Health", 1, 1000, 0 )
-        local spawnarmor = LAMBDAPANELS:CreateNumSlider( mainscroll, TOP, 0, "Spawn Armor", 0, 1000, 0 )
-
-        local teamweaponrestrictions = {}
-        LAMBDAPANELS:CreateLabel( "Team Weapon Restrictions", mainscroll, TOP )
-        LAMBDAPANELS:CreateButton( mainscroll, TOP, "Edit Weapon Restrictions", function()
-            local weppermframe = LAMBDAPANELS:CreateFrame( "Weapon Restrictions", 800, 400 )
-            local weppermscroll = LAMBDAPANELS:CreateScrollPanel( weppermframe, true, FILL )
-
-            LAMBDAPANELS:CreateLabel( "Here you can mark weapons that the team will only be allowed to use.", weppermframe, TOP )
-            LAMBDAPANELS:CreateLabel( "Leaving all weapons un-checked will disable team weapon restrictions.", weppermframe, TOP )
-
-            local weaponcheckboxes = {}
-            for weporigin, _ in pairs( _LAMBDAPLAYERSWEAPONORIGINS ) do
-                local weppermscroll2 = LAMBDAPANELS:CreateScrollPanel( weppermscroll, false, LEFT )
-                weppermscroll2:SetSize( 250, 350 )
-                weppermscroll:AddPanel( weppermscroll2 )
-
-                LAMBDAPANELS:CreateLabel( "------ " .. weporigin .. " ------ ", weppermscroll2, TOP )
-
-                local togglestate = false
-                weaponcheckboxes[ weporigin ] = {}
-
-                LAMBDAPANELS:CreateButton( weppermscroll2, TOP, "Toggle " .. weporigin .. " Weapons", function()
-                    togglestate = !togglestate
-                    for _, v in ipairs( weaponcheckboxes[ weporigin ] ) do
-                        v[1]:SetChecked( togglestate )
-                    end
-                end )
-
-                for k, v in pairs( _LAMBDAPLAYERSWEAPONS ) do
-                    if v.origin == weporigin and k != "none" and k != "physgun" then
-                        local weprettyname = string_Replace( v.prettyname, "[" .. weporigin .. "] ", "" )
-                        local weppermcheckbox = LAMBDAPANELS:CreateCheckBox( weppermscroll2, TOP, ( teamweaponrestrictions[ k ] or false ), weprettyname )
-                        table_insert( weaponcheckboxes[ weporigin ], { weppermcheckbox, k } )
-                    end
-                end
-            end
-
-            LAMBDAPANELS:CreateButton( weppermscroll, BOTTOM, "Done", function()
-                table_Empty( teamweaponrestrictions )
-
-                for _, v in pairs( weaponcheckboxes ) do
-                    for _, j in ipairs( v ) do
-                        if !j[ 1 ]:GetChecked() then continue end
-                        teamweaponrestrictions[ j[ 2 ] ] = true
-                    end
-                end
-
-                AddNotification( "Updated team's weapon restrictions!", 0, 4 )
-                PlayClientSound( "buttons/button15.wav" )
-
-                weppermframe:Close()
-            end )
-        end )
-
         LAMBDAPANELS:CreateLabel( "Team Playermodels", mainscroll, TOP )
         local teampmlist = CreateVGUI( "DListView", mainscroll )
-        teampmlist:SetSize( 300, 150 )
+        teampmlist:SetSize( 250, 150 )
         teampmlist:Dock( TOP )
         teampmlist:AddColumn( "", 1 )
 
@@ -1084,8 +1043,8 @@ if ( CLIENT ) then
                     PlayClientSound( "buttons/button10.wav" )
                     return
                 end
-                for _, v in ipairs( teampmlist:GetLines() ) do
-                    if v:GetValue( 1 ) == selectedmodel then
+                for _, line in ipairs( teampmlist:GetLines() ) do
+                    if line:GetValue( 1 ) == selectedmodel then
                         AddNotification( "Selected playermodel is already on the list!", 1, 4 )
                         PlayClientSound( "buttons/button10.wav" )
                         return
@@ -1110,15 +1069,76 @@ if ( CLIENT ) then
                 end
             end
 
-            for _, v in spairs( GetAllValidPlayerModels() ) do
+            for _, mdl in spairs( GetAllValidPlayerModels() ) do
                 local modelbutton = pmlist:Add( "SpawnIcon" )
-                modelbutton:SetModel( v )
+                modelbutton:SetModel( mdl )
 
                 function modelbutton:DoClick()
                     manualMdl:SetValue( modelbutton:GetModelName() )
                     manualMdl:OnChange()
                 end
             end
+        end )
+
+        local spawnhealth = LAMBDAPANELS:CreateNumSlider( mainscroll, TOP, 100, "Team Health", 1, 10000, 0 )
+        local spawnarmor = LAMBDAPANELS:CreateNumSlider( mainscroll, TOP, 0, "Team Armor", 0, 10000, 0 )
+
+        LAMBDAPANELS:CreateLabel( "Team Voice Profile", mainscroll, TOP )
+        local voiceprofiletbl = { [ "No Voice Profile" ] = "/NIL" }
+        for vp, _ in pairs( LambdaVoiceProfiles ) do voiceprofiletbl[ vp ] = vp end
+        local voiceprofile = LAMBDAPANELS:CreateComboBox( mainscroll, TOP, voiceprofiletbl )
+
+        local teamweaponrestrictions = {}
+        LAMBDAPANELS:CreateLabel( "Team Weapon Restrictions", mainscroll, TOP )
+        LAMBDAPANELS:CreateButton( mainscroll, TOP, "Edit Weapon Restrictions", function()
+            local weppermframe = LAMBDAPANELS:CreateFrame( "Weapon Restrictions", 800, 400 )
+            local weppermscroll = LAMBDAPANELS:CreateScrollPanel( weppermframe, true, FILL )
+
+            LAMBDAPANELS:CreateLabel( "Here you can mark weapons that the team will only be allowed to use.", weppermframe, TOP )
+            LAMBDAPANELS:CreateLabel( "Leaving all weapons un-checked will disable team weapon restrictions.", weppermframe, TOP )
+
+            local weaponcheckboxes = {}
+            for weporigin, _ in pairs( _LAMBDAPLAYERSWEAPONORIGINS ) do
+                local weppermscroll2 = LAMBDAPANELS:CreateScrollPanel( weppermscroll, false, LEFT )
+                weppermscroll2:SetSize( 250, 350 )
+                weppermscroll:AddPanel( weppermscroll2 )
+
+                LAMBDAPANELS:CreateLabel( "------ " .. weporigin .. " ------ ", weppermscroll2, TOP )
+
+                local togglestate = false
+                weaponcheckboxes[ weporigin ] = {}
+
+                LAMBDAPANELS:CreateButton( weppermscroll2, TOP, "Toggle " .. weporigin .. " Weapons", function()
+                    togglestate = !togglestate
+                    for _, check in ipairs( weaponcheckboxes[ weporigin ] ) do
+                        check[1]:SetChecked( togglestate )
+                    end
+                end )
+
+                for name, data in pairs( _LAMBDAPLAYERSWEAPONS ) do
+                    if data.origin == weporigin and name != "none" and name != "physgun" then
+                        local weprettyname = string_Replace( data.prettyname, "[" .. weporigin .. "] ", "" )
+                        local weppermcheckbox = LAMBDAPANELS:CreateCheckBox( weppermscroll2, TOP, ( teamweaponrestrictions[ name ] or false ), weprettyname )
+                        table_insert( weaponcheckboxes[ weporigin ], { weppermcheckbox, name } )
+                    end
+                end
+            end
+
+            LAMBDAPANELS:CreateButton( weppermscroll, BOTTOM, "Done", function()
+                table_Empty( teamweaponrestrictions )
+
+                for _, v in pairs( weaponcheckboxes ) do
+                    for _, j in ipairs( v ) do
+                        if !j[ 1 ]:GetChecked() then continue end
+                        teamweaponrestrictions[ j[ 2 ] ] = true
+                    end
+                end
+
+                AddNotification( "Updated team's weapon restrictions!", 0, 4 )
+                PlayClientSound( "buttons/button15.wav" )
+
+                weppermframe:Close()
+            end )
         end )
 
         CompileSettings = function()
@@ -1129,11 +1149,11 @@ if ( CLIENT ) then
                 return 
             end
 
-            local playermdls = nil
+            local playermdls
             local pmlist = teampmlist:GetLines()
             if #pmlist > 0 then
                 playermdls = {}
-                for _, v in ipairs( pmlist ) do playermdls[ #playermdls + 1 ] = v:GetValue( 1 ) end
+                for _, list in ipairs( pmlist ) do playermdls[ #playermdls + 1 ] = list:GetValue( 1 ) end
             end
 
             local health = Round( spawnhealth:GetValue(), 0 )
@@ -1142,13 +1162,16 @@ if ( CLIENT ) then
             local armor = Round( spawnarmor:GetValue(), 0 )
             if armor == 0 then armor = nil end
 
+            local _, vp = voiceprofile:GetSelected()
+
             local infotable = {
                 name = name,
                 color = teamcolor:GetVector(),
                 spawnhealth = health,
                 spawnarmor = armor,
                 playermdls = playermdls,
-                weaponrestrictions = ( !table_IsEmpty( teamweaponrestrictions ) and teamweaponrestrictions or nil )
+                weaponrestrictions = ( !table_IsEmpty( teamweaponrestrictions ) and teamweaponrestrictions or nil ),
+                voiceprofile = ( vp != "/NIL" and vp )
             }
 
             return infotable
@@ -1163,7 +1186,10 @@ if ( CLIENT ) then
 
             teampmlist:Clear()
             local mdls = infotable.playermdls
-            if mdls then for _, v in ipairs( mdls ) do teampmlist:AddLine( v ) end end
+            if mdls then for _, mdl in ipairs( mdls ) do teampmlist:AddLine( mdl ) end end
+
+            local vp = infotable.voiceprofile
+            voiceprofile:SelectOptionByKey( vp and vp or "/NIL" ) 
 
             teamweaponrestrictions = infotable.weaponrestrictions or {}
         end
