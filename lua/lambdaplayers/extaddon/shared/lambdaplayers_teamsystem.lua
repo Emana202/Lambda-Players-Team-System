@@ -88,11 +88,11 @@ local playerTeam    = CreateLambdaConvar( "lambdaplayers_teamsystem_playerteam",
 CreateLambdaConsoleCommand( "lambdaplayers_teamsystem_updateteamlist", function( ply ) 
     LambdaTeams:UpdateData()
 
-    for _, option in ipairs( _LAMBDAConVarSettings ) do
+   for _, option in ipairs( _LAMBDAConVarSettings ) do
         local name = option.name
-        if name == "Player Team" then v.options = LambdaTeams.TeamOptions end
-        if name == "Lambda Team" then v.options = LambdaTeams.TeamOptionsRandom end
-    end
+        if option.name == "Player Team" then option.options = LambdaTeams.TeamOptions end
+        if option.name == "Lambda Team" then option.options = LambdaTeams.TeamOptionsRandom end
+   end
 
     ply:ConCommand( "spawnmenu_reload" )
 end, true, "Refreshes the team list. Use this after editting teams in the team panel.", { name = "Refresh Team List", category = "Team System" } )
