@@ -444,10 +444,8 @@ if ( SERVER ) then
                 local surroundings = self:FindInSphere( nil, 2000, function( ent )
                     if LambdaIsValid( ent ) and ( !LambdaIsValid( ene ) or self:GetRangeSquaredTo( ent ) < self:GetRangeSquaredTo( ene ) ) and self:CanTarget( ent ) and self:CanSee( ent ) then
                         local areTeammates = LambdaTeams:AreTeammates( self, ent )
-                        if IsValid( kothEnt ) and kothEnt == ent.l_KOTH_Entity and ent:IsInRange( kothEnt, 1000 ) and !areTeammates then
-                            return true
-                        end
-                        return ( areTeammates == false )
+                        if areTeammates == false then return true end
+                        if IsValid( kothEnt ) and kothEnt == ent.l_KOTH_Entity and ent:IsInRange( kothEnt, 1000 ) and !areTeammates then return true end
                     end
                 end )
 
@@ -469,16 +467,13 @@ if ( SERVER ) then
     end
     
     local function LambdaOnInjured( self, dmginfo )
-        if !self.l_TeamName or !teamsEnabled:GetBool() then return end
-
         local attacker = dmginfo:GetAttacker()
-        if attacker == self or !IsValid( attacker ) or !LambdaTeams:AreTeammates( self, attacker ) then return end
-
+        if attacker == self or !LambdaTeams:AreTeammates( self, attacker ) or !teamsEnabled:GetBool() then return end
         if noFriendFire:GetBool() then return true end
     end
-    
+
     local function LambdaOnOtherInjured( self, victim, dmginfo, tookDamage )
-        if !tookDamage or !self.l_TeamName or self:InCombat() or !teamsEnabled:GetBool() then return end
+        if !tookDamage or self:InCombat() or !teamsEnabled:GetBool() then return end
 
         local attacker = dmginfo:GetAttacker()
         if attacker == self or !LambdaIsValid( attacker ) then return end
@@ -490,7 +485,7 @@ if ( SERVER ) then
         end
     end
     
-    local function LambdaOnBeginMove( self, pos )
+    local function LambdaOnBeginMove( self, pos, onNavmesh )
         if !teamsEnabled:GetBool() then return end
 
         local state = self:GetState()
@@ -502,11 +497,13 @@ if ( SERVER ) then
             if #kothEnts > 0 then kothEnt = kothEnts[ random( #kothEnts ) ] end
         end
         if IsValid( kothEnt ) then
-            self.l_KOTH_Entity = kothEnt
             local capRange = kothCapRange:GetInt()
-            local area = GetNearestNavArea( kothEnt:GetPos(), false, capRange )
             self:SetRun( random( 1, 3 ) != 1 and ( !self:IsInRange( kothEnt, capRange ) or !self:CanSee( kothEnt ) ) )
+
+            local area = ( onNavmesh and GetNearestNavArea( kothEnt:GetPos(), true ) )
             self:RecomputePath( IsValid( area ) and area:GetRandomPoint() or ( kothEnt:GetPos() + VectorRand( -capRange, capRange ) ) )
+
+            self.l_KOTH_Entity = kothEnt
             return
         end
 
@@ -528,8 +525,9 @@ if ( SERVER ) then
                 end
             end
             if IsValid( ctfFlag ) then
-                self:RecomputePath( ctfFlag:GetPos() + Vector( random( -50, 50 ), random( -50, 50 ), 0 ) )
                 self:SetRun( true )
+                self:RecomputePath( ctfFlag:GetPos() + Vector( random( -50, 50 ), random( -50, 50 ), 0 ) )
+                
                 self.l_CTF_Flag = ctfFlag
                 return
             end
@@ -538,23 +536,32 @@ if ( SERVER ) then
             if rndDecision < 30 and stickTogether:GetBool() then
                 for _, ent in RandomPairs( ents_GetAll() ) do
                     if ent != self and LambdaTeams:AreTeammates( self, ent ) and ent:Alive() and ( !ent:IsPlayer() or !ignorePlys:GetBool() ) then
-                        local movePos = ( ( ent.l_issmoving and ( ( isentity( self.l_movepos ) and IsValid( self.l_movepos ) ) and self.l_movepos:GetPos() or self.l_movepos ) or ent:GetPos() ) + VectorRand( -400, 400 ) )
-                        local area = GetNearestNavArea( movePos, false, 400 )
-                        if IsValid( area ) then movePos = area:GetClosestPointOnArea( movePos ) end
+                        local entPos = ent:GetPos()
+                        if ent.l_issmoving then 
+                            local entMovePos = ent.l_movepos
+                            entPos = ( isentity( entMovePos ) and IsValid( entMovePos ) and entMovePos:GetPos() or entMovePos )
+                        end
 
+                        local area = ( onNavmesh and GetNearestNavArea( entPos, true ) )
+                        local movePos = ( IsValid( area ) and area:GetRandomPoint() or ( entPos + VectorRand( -300, 300 ) ) )
+
+                        self:SetRun( random( 1, 5 ) == 1 or !self:IsInRange( movePos, 1500 ) )
                         self:RecomputePath( movePos )
-                        break 
+
+                        return 
                     end
                 end
             elseif rndDecision > 70 and huntDown:GetBool() and attackOthers:GetBool() then
                 for _, ent in RandomPairs( ents_GetAll() ) do
                     if ent != self and LambdaTeams:AreTeammates( self, ent ) == false and ent:Alive() and self:CanTarget( ent ) then
-                        local movePos = ( ent:GetPos() + VectorRand( -300, 300 ) )
-                        local area = GetNearestNavArea( movePos, false, 300 )
-                        if IsValid( area ) then movePos = area:GetClosestPointOnArea( movePos ) end
+                        local entPos = ent:GetPos()
+                        local area = ( onNavmesh and GetNearestNavArea( entPos, true ) )
+                        local movePos = ( IsValid( area ) and area:GetRandomPoint() or ( entPos + VectorRand( -300, 300 ) ) )
 
+                        self:SetRun( random( 1, 5 ) == 1 )
                         self:RecomputePath( movePos )
-                        break
+                        
+                        return
                     end
                 end
             end
@@ -702,8 +709,10 @@ if ( CLIENT ) then
     end
 
     local function OnPreDrawHalos()
+        if !drawHalo:GetBool() or !teamsEnabled:GetBool() then return end
+
         local plyTeam = playerTeam:GetString()
-        if plyTeam == "" or !drawHalo:GetBool() or !teamsEnabled:GetBool() then return end
+        if plyTeam == "" then return end
 
         for _, ent in ipairs( GetLambdaPlayers() ) do
             local entTeam = LambdaTeams:GetPlayerTeam( ent )
@@ -715,6 +724,7 @@ if ( CLIENT ) then
 
     local function OnHUDPaint()
         if !teamsEnabled:GetBool() then return end
+        
         local ply = LocalPlayer()
         local scrW, scrH = ScrW(), ScrH()
 
@@ -758,7 +768,7 @@ if ( CLIENT ) then
             local fadeOutEnd = kothIconFadeEndDist:GetInt()
             
             for _, koth in ipairs( ents_FindByClass( "lambda_koth_point" ) ) do
-                if IsValid( koth ) and !koth:IsDormant() then
+                if IsValid( koth ) then
                     local iconPos = koth:WorldSpaceCenter()
 
                     hudTrTbl.start = eyePos
@@ -816,50 +826,53 @@ if ( CLIENT ) then
             local fadeOutEnd = ctfIconFadeEndDist:GetInt()
 
             for _, flag in ipairs( ents_FindByClass( "lambda_ctf_flag" ) ) do
-                if IsValid( flag ) and !flag:IsDormant() then
-                    local holder = flag:GetFlagHolderEnt()
-                    if holder != ply and ( !flag:GetIsAtHome() and !flag:GetIsPickedUp() and flag:GetTeamName() == plyTeam or IsValid( holder ) and LambdaTeams:GetPlayerTeam( holder ) == plyTeam ) then
-                        local iconPos = flag:WorldSpaceCenter()
+                if IsValid( flag ) then
+					local isHome = flag:GetIsAtHome()
+					if isHome or !flag:IsDormant() then
+						local holder = flag:GetFlagHolderEnt()
+						if holder != ply and ( !isHome and !flag:GetIsPickedUp() and flag:GetTeamName() == plyTeam or IsValid( holder ) and LambdaTeams:GetPlayerTeam( holder ) == plyTeam ) then
+							local iconPos = flag:WorldSpaceCenter()
 
-                        hudTrTbl.start = eyePos
-                        hudTrTbl.endpos = iconPos
+							hudTrTbl.start = eyePos
+							hudTrTbl.endpos = iconPos
 
-                        if ctfIconDrawVisible:GetBool() or TraceLine( hudTrTbl ).Hit then
-                            surface.SetMaterial( ctfFlagCircle )
+							if ctfIconDrawVisible:GetBool() or TraceLine( hudTrTbl ).Hit then
+								surface.SetMaterial( ctfFlagCircle )
 
-                            local drawAlpha = 0
-                            local dist = eyePos:Distance( iconPos )
-                            if dist < fadeInStart and dist > fadeOutEnd then
-                                local norm = ( 1 / ( fadeInStart - fadeOutEnd ) * ( dist - fadeInStart ) + 1 )
-                                drawAlpha = ( ( 1 - norm ) * 255 )
-                            elseif dist < fadeOutEnd then
-                                drawAlpha = 255
-                            end
+								local drawAlpha = 0
+								local dist = eyePos:Distance( iconPos )
+								if dist < fadeInStart and dist > fadeOutEnd then
+									local norm = ( 1 / ( fadeInStart - fadeOutEnd ) * ( dist - fadeInStart ) + 1 )
+									drawAlpha = ( ( 1 - norm ) * 255 )
+								elseif dist < fadeOutEnd then
+									drawAlpha = 255
+								end
 
-                            local iconClr = flag:GetTeamColor():ToColor()
-                            surface.SetDrawColor( iconClr.r, iconClr.g, iconClr.b, drawAlpha )
-                            
-                            local angDiff = math.AngleDifference( ply:GetAimVector():GetNormalized():Angle().y, ( iconPos - eyePos ):GetNormalized():Angle().y )
-                            if angDiff < 0 then angDiff = 180 + ( angDiff + 180 ) end
-                            angDiff = angDiff - 90
-                            
-                            local offsetSize = 45
-                            local x = ( scrW / 2 ) + ( ( ( scrW - offsetSize ) / 2 ) * math.cos( math.rad( angDiff ) ) )
-                            local y = ( scrH / 2 ) + ( ( ( scrH - ( offsetSize * 1.4 ) ) / 2 ) * math.sin( math.rad( angDiff ) ) )
+								local iconClr = flag:GetTeamColor():ToColor()
+								surface.SetDrawColor( iconClr.r, iconClr.g, iconClr.b, drawAlpha )
+								
+								local angDiff = math.AngleDifference( ply:GetAimVector():GetNormalized():Angle().y, ( iconPos - eyePos ):GetNormalized():Angle().y )
+								if angDiff < 0 then angDiff = 180 + ( angDiff + 180 ) end
+								angDiff = angDiff - 90
+								
+								local offsetSize = 45
+								local x = ( scrW / 2 ) + ( ( ( scrW - offsetSize ) / 2 ) * math.cos( math.rad( angDiff ) ) )
+								local y = ( scrH / 2 ) + ( ( ( scrH - ( offsetSize * 1.4 ) ) / 2 ) * math.sin( math.rad( angDiff ) ) )
 
-                            local screenPos = iconPos:ToScreen()
-                            if screenPos.x < x and screenPos.x < ( scrW - x ) or screenPos.x > x and screenPos.x > ( scrW - x ) then 
-                                screenPos.x = x
-                            end
-                            if screenPos.y < y or screenPos.y > scrH then 
-                                screenPos.y = y 
-                            elseif screenPos.y > ( scrH - y ) and screenPos.y < scrH then 
-                                screenPos.y = ( scrH - y ) 
-                            end
+								local screenPos = iconPos:ToScreen()
+								if screenPos.x < x and screenPos.x < ( scrW - x ) or screenPos.x > x and screenPos.x > ( scrW - x ) then 
+									screenPos.x = x
+								end
+								if screenPos.y < y or screenPos.y > scrH then 
+									screenPos.y = y 
+								elseif screenPos.y > ( scrH - y ) and screenPos.y < scrH then 
+									screenPos.y = ( scrH - y ) 
+								end
 
-                            surface.DrawTexturedRect( screenPos.x, screenPos.y, 32, 32 )
-                        end
-                    end
+								surface.DrawTexturedRect( screenPos.x, screenPos.y, 32, 32 )
+							end
+						end
+					end
                 end
             end
         end

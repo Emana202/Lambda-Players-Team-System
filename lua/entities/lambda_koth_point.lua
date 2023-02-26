@@ -109,7 +109,6 @@ if ( SERVER ) then
 			                    self:SetIsCaptured( false )
 			                    self:SetCapturePercent( 0 )
 			                    self:SetCapturerName( "Neutral" )
-			                    self.OldColor = self:GetCapturerColor()
 			                    self:SetCapturerColor( vec_white )
 
 			                    self:EmitSound( "lambdaplayers/koth/holdlost.mp3", 100 )
@@ -126,7 +125,6 @@ if ( SERVER ) then
 						local capTeamClr = self:GetCapturerTeamColor( ent )
 						
 						self:SetContesterTeam( entTeam )
-			            self.OldColor = self:GetCapturerColor()
 						self:SetContesterColor( capTeamClr )
 
 						if capPerc < 100 then
@@ -140,12 +138,18 @@ if ( SERVER ) then
 			                self:SetIsCaptured( true )
 		                    self:SetCapturePercent( 100 )
 		                    self:SetCapturerName( entTeam )
+						    self:SetCapturerColor( capTeamClr )
 
 						    self:EmitSound( "lambdaplayers/koth/captured.mp3", 100 )
 						    self:EmitSound( "lambdaplayers/koth/pointcap.mp3", 65 )
 
-						    self:SetCapturerColor( capTeamClr )
-						    LambdaPlayers_ChatAdd( nil, color_glacier, "[", self.OldColor:ToColor(), self:GetPointName(), color_glacier, "]"," has been captured by ", self:GetCapturerColor():ToColor(), self:GetCapturerName(), ( self:GetCapturerTeamName( ent ) != ent:Nick() and " (" .. ent:Nick() .. ")" or "" ) )
+							if capTeamClr == self.OldColor then
+								LambdaPlayers_ChatAdd( nil, color_glacier, "[", capTeamClr:ToColor(), self:GetPointName(), color_glacier, "]"," was brought back by ", capTeamClr:ToColor(), ent:Nick() )
+						    else
+								LambdaPlayers_ChatAdd( nil, color_glacier, "[", self.OldColor:ToColor(), self:GetPointName(), color_glacier, "]"," has been captured by ", self:GetCapturerColor():ToColor(), self:GetCapturerName(), ( self:GetCapturerTeamName( ent ) != ent:Nick() and " (" .. ent:Nick() .. ")" or "" ) )
+							end
+
+							self.OldColor = self:GetCapturerColor()
 						end
 					end
 				end
