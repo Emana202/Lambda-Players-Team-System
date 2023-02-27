@@ -7,8 +7,8 @@ if ( CLIENT ) then
 		{ name = "right" }
 	}
 
-	language.Add( "tool.lambda_teamsystem_koth_pointmaker", "Lambda KOTH Point Maker" )
-	language.Add( "tool.lambda_teamsystem_koth_pointmaker.name", "Lambda KOTH Point Maker" )
+	language.Add( "tool.lambda_teamsystem_koth_pointmaker", "KOTH Point Maker" )
+	language.Add( "tool.lambda_teamsystem_koth_pointmaker.name", "KOTH Point Maker" )
 	language.Add( "tool.lambda_teamsystem_koth_pointmaker.desc", "Marks a spot for a King of the Hill point" )
 	language.Add( "tool.lambda_teamsystem_koth_pointmaker.left", "Fire onto a surface to mark a KOTH spot" )
 	language.Add( "tool.lambda_teamsystem_koth_pointmaker.right", "Fire near a Point to remove it" )

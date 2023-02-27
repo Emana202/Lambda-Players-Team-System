@@ -42,7 +42,7 @@ if ( SERVER ) then
         local selfPos = self:GetPos()
 
         occupiedTrTbl.start = selfPos
-        occupiedTrTbl.endpos = selfPos
+        occupiedTrTbl.endpos = selfPos + vector_up * 4
         self.IsOccupied = ( LambdaIsValid( TraceHull( occupiedTrTbl ).Entity ) )
 
         self:NextThink( CurTime() + 0.1 )
@@ -65,21 +65,22 @@ if ( CLIENT ) then
     function ENT:Draw()
         local ply = LocalPlayer()
         local actWep = ply:GetActiveWeapon()
-        if !ply:Alive() or !IsValid( actWep ) or actWep:GetClass() != "gmod_tool" then return end
+        if !ply:Alive() or !IsValid( actWep ) or actWep:GetClass() != "gmod_tool" or ply:GetTool().Mode != "lambda_teamsystem_spawnpointmaker" then return end
 
         local textPos = ( self:GetPos() + textOffset )
-        local spawnTeam = self:GetSpawnTeam()
         local spawnID = self:GetSpawnIndex()
         local teamColor = self:GetTeamColor():ToColor()
+        local spawnTeam = self:GetSpawnTeam()
+        local text = ( spawnTeam != "" and  spawnTeam .. " " .. spawnID or spawnID )
 
         rotateAng[ 2 ] = ( CurTime() * 100 % 360 )
         cam.Start3D2D( textPos, rotateAng, 0.5 )
-            draw.DrawText( spawnTeam .. " " .. spawnID, "ChatFont", 0, 0, teamColor, TEXT_ALIGN_CENTER )
+            draw.DrawText( text, "ChatFont", 0, 0, teamColor, TEXT_ALIGN_CENTER )
         cam.End3D2D()
 
         rotateAng:RotateAroundAxis( angAddVec, 180 )
         cam.Start3D2D( textPos, rotateAng, 0.5 )
-            draw.DrawText( spawnTeam .. " " .. spawnID, "ChatFont", 0, 0, teamColor, TEXT_ALIGN_CENTER )
+            draw.DrawText( text, "ChatFont", 0, 0, teamColor, TEXT_ALIGN_CENTER )
         cam.End3D2D()
 
         self:DrawModel()

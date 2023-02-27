@@ -189,7 +189,11 @@ function LambdaTeams:GetSpawnPoints( teamName )
     local points = {}
 
     for _, point in ipairs( ents_FindByClass( "lambda_teamspawnpoint" ) ) do
-        if !IsValid( point ) or point:GetSpawnTeam() != teamName then continue end
+        if !IsValid( point ) then continue end
+        
+        local pointTeam = point:GetSpawnTeam()
+        if !teamName and pointTeam != "" or teamName and pointTeam != teamName then continue end
+
         points[ #points + 1 ] = point
     end
 
@@ -362,18 +366,18 @@ if ( SERVER ) then
                 if self.l_TeamColor then self:SetPlyColor( self.l_TeamColor:ToVector() ) end
             end
 
-            if self.l_TeamName then 
-                if useSpawnpoints:GetBool() then
-                    local spawnPoints = LambdaTeams:GetSpawnPoints( self.l_TeamName )
-                    if #spawnPoints > 0 then 
-                        local spawnPoint = spawnPoints[ random( #spawnPoints ) ]
-                        for _, point in RandomPairs( spawnPoints ) do if !point.IsOccupied then spawnPoint = point end end
-
-                        self:SetPos( spawnPoint:GetPos() )
-                        self:SetAngles( spawnPoint:GetAngles() ) 
-                    end
+            if useSpawnpoints:GetBool() then
+                local spawnPoints = LambdaTeams:GetSpawnPoints( self.l_TeamName )
+                if #spawnPoints > 0 then 
+                    local spawnPoint = spawnPoints[ random( #spawnPoints ) ]
+                    for _, point in RandomPairs( spawnPoints ) do if !point.IsOccupied then spawnPoint = point end end
+                    
+                    self:SetPos( spawnPoint:GetPos() )
+                    self:SetAngles( spawnPoint:GetAngles() ) 
                 end
+            end
 
+            if self.l_TeamName then 
                 local spawnHealth = self.l_TeamSpawnHealth
                 if spawnHealth then 
                     self:SetHealth( spawnHealth )
@@ -456,13 +460,13 @@ if ( SERVER ) then
         end
 
         local flag = self.l_CTF_Flag
-        if IsValid( flag ) and self:InCombat() and ( self.l_HasFlag or !flag.IsLambdaCaptureZone and flag:GetTeamName() != self.l_TeamName and self:IsInRange( flag, 384 ) and self:CanSee( flag ) ) then
+        if IsValid( flag ) and self:InCombat() and ( self.l_HasFlag or flag:GetTeamName() != self.l_TeamName and self:IsInRange( flag, 384 ) and self:CanSee( flag ) ) then
             self.l_movepos = flag:GetPos()
         end
     end
     
     local function LambdaCanTarget( self, ent )
-        if self.l_HasFlag and ent.IsLambdaPlayer and ( !ent:InCombat() or ent:GetEnemy() != self or !ent:IsInRange( self, 1024 ) ) then return true end
+        if self.l_HasFlag and ent.IsLambdaPlayer and !ent.l_HasFlag and ( !ent:InCombat() or ent:GetEnemy() != self or !ent:IsInRange( self, 1024 ) ) then return true end
         if teamsEnabled:GetBool() and LambdaTeams:AreTeammates( self, ent ) then return true end
     end
     
@@ -480,16 +484,17 @@ if ( SERVER ) then
 
         if LambdaTeams:AreTeammates( self, victim ) and self:CanTarget( attacker ) and ( self:IsInRange( victim, 500 ) or self:CanSee( victim ) ) then
             self:AttackTarget( attacker )
-        elseif LambdaTeams:AreTeammates( self, attacker ) and self:CanTarget( victim ) and ( self:IsInRange( attacker, 500 ) or self:CanSee( attacker ) ) then
+            return
+        end
+
+        if LambdaTeams:AreTeammates( self, attacker ) and self:CanTarget( victim ) and ( self:IsInRange( attacker, 500 ) or self:CanSee( attacker ) ) then
             self:AttackTarget( victim )
+            return 
         end
     end
     
     local function LambdaOnBeginMove( self, pos, onNavmesh )
         if !teamsEnabled:GetBool() then return end
-
-        local state = self:GetState()
-        if state != "Idle" and state != "FindTarget" then return end
 
         local kothEnt = self.l_KOTH_Entity
         if !IsValid( kothEnt ) or kothEnt:GetIsCaptured() and random( 1, ( kothEnt:GetCapturerName() == kothEnt:GetCapturerTeamName( self ) and 4 or 8 ) ) == 1 then
@@ -500,37 +505,45 @@ if ( SERVER ) then
             local capRange = kothCapRange:GetInt()
             self:SetRun( random( 1, 3 ) != 1 and ( !self:IsInRange( kothEnt, capRange ) or !self:CanSee( kothEnt ) ) )
 
-            local area = ( onNavmesh and GetNearestNavArea( kothEnt:GetPos(), true ) )
-            self:RecomputePath( IsValid( area ) and area:GetRandomPoint() or ( kothEnt:GetPos() + VectorRand( -capRange, capRange ) ) )
+            local kothPos = ( kothEnt:GetPos() + VectorRand( -capRange, capRange ) )
+            local area = ( onNavmesh and GetNearestNavArea( kothPos, true ) )
+            self:RecomputePath( ( IsValid( area ) and area:IsPartiallyVisible( kothEnt:WorldSpaceCenter() ) ) and area:GetClosestPointOnArea( kothPos ) or kothPos )
 
             self.l_KOTH_Entity = kothEnt
             return
         end
 
-        if self.l_TeamName then
+        local teamName = self.l_TeamName
+        if teamName then
+            local hasFlag =  self.l_HasFlag
             local ctfFlag = self.l_CTF_Flag
-            if !IsValid( ctfFlag ) or random( 1, 6 ) == 1 or self.l_HasFlag and !ctfFlag.IsLambdaCaptureZone or !self.l_HasFlag and ctfFlag.IsLambdaCaptureZone then
+            if random( 1, 5 ) == 1 or !IsValid( ctfFlag ) or ctfFlag:GetTeamName() != teamname and self.l_HasFlag then
                 for _, flag in RandomPairs( ents_FindByClass( "lambda_ctf_flag" ) ) do
-                    if IsValid( flag ) then
-                        if !self.l_HasFlag then 
-                            if !flag:GetIsCaptureZone() and ( flag:GetTeamName() != self.l_TeamName and flag:GetIsPickedUp() or !flag:GetIsAtHome() or random( 1, 3 ) == 1 ) then
-                                ctfFlag = flag
-                                break
-                            end
-                        elseif flag:GetTeamName() == self.l_TeamName and IsValid( flag.CaptureZone ) then
-                            ctfFlag = flag.CaptureZone
-                            break
-                        end
+                    if IsValid( flag ) and ( hasFlag and flag:GetTeamName() == teamName or !hasFlag and !flag:GetIsCaptureZone() and ( flag:GetTeamName() != teamName and flag:GetIsPickedUp() or !flag:GetIsAtHome() or random( 1, 3 ) == 1 ) ) then 
+                        ctfFlag = flag
+                        break
                     end
                 end
             end
-            if IsValid( ctfFlag ) then
-                self:SetRun( true )
-                self:RecomputePath( ctfFlag:GetPos() + Vector( random( -50, 50 ), random( -50, 50 ), 0 ) )
-                
+            if IsValid( ctfFlag ) then                
+                local movePos
+                if !hasFlag then
+                    self:SetRun( !self:IsInRange( ctfFlag, 500 ) )
+                    local flagPos = ( ctfFlag:GetPos() + Vector( random( -300, 300 ), random( -300, 300 ), 0 ) )
+                    local area = ( onNavmesh and GetNearestNavArea( flagPos, true ) )
+                    movePos = ( ( IsValid( area ) and area:IsPartiallyVisible( ctfFlag:WorldSpaceCenter() ) ) and area:GetClosestPointOnArea( flagPos ) or flagPos )
+                else
+                    self:SetRun( true )
+                    movePos = ( ctfFlag.CaptureZone:GetPos() + Vector( random( -50, 50 ), random( -50, 50 ), 0 ) )
+                end
+
+                self:RecomputePath( movePos )
                 self.l_CTF_Flag = ctfFlag
                 return
             end
+
+            local state = self:GetState()
+            if state != "Idle" and state != "FindTarget" then return end
 
             local rndDecision = random( 1, 100 )
             if rndDecision < 30 and stickTogether:GetBool() then
@@ -606,9 +619,7 @@ if ( SERVER ) then
         if transition or !tobool( ply:GetInfo( "lambdaplayers_teamsystem_plyusespawnpoints" ) ) then return end
 
         local plyTeam = ply:GetInfo( "lambdaplayers_teamsystem_playerteam" )
-        if plyTeam == "" then return end
-
-        local spawnPoints = LambdaTeams:GetSpawnPoints( plyTeam )
+        local spawnPoints = LambdaTeams:GetSpawnPoints( plyTeam == "" and nil or plyTeam )
         if #spawnPoints > 0 then 
             local spawnPoint = spawnPoints[ random( #spawnPoints ) ]
             for _, point in RandomPairs( spawnPoints ) do if !point.IsOccupied then spawnPoint = point end end

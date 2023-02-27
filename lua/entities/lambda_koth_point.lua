@@ -26,6 +26,7 @@ if ( SERVER ) then
 	local ipairs = ipairs
 	local FindInSphere = ents.FindInSphere
 	local ignorePlys = GetConVar( "ai_ignoreplayers" )
+	local aiDisabled = GetConVar( "ai_disabled" )
 	local Clamp = math.Clamp
 	local Round = math.Round
 	local Rand = math.Rand
@@ -90,7 +91,7 @@ if ( SERVER ) then
 		self:SetContesterTeam( "" )
 		self:SetContesterColor( vec_white )
 
-		if !self:IsContested() then
+		if !aiDisabled:GetBool() and !self:IsContested() then
 			local capRate = captureRate:GetFloat()
 
 			for _, ent in ipairs( FindInSphere( self:GetPos(), captureRange:GetInt() ) ) do

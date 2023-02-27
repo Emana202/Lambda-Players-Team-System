@@ -7,8 +7,8 @@ if ( CLIENT ) then
 		{ name = "right" }
 	}
 
-	language.Add("tool.lambda_teamsystem_ctf_pointmaker", "Lambda CTF Point Maker")
-	language.Add("tool.lambda_teamsystem_ctf_pointmaker.name", "Lambda CTF Point Maker")
+	language.Add("tool.lambda_teamsystem_ctf_pointmaker", "CTF Point Maker")
+	language.Add("tool.lambda_teamsystem_ctf_pointmaker.name", "CTF Point Maker")
 	language.Add("tool.lambda_teamsystem_ctf_pointmaker.desc", "Creates a CTF flag")
 	language.Add("tool.lambda_teamsystem_ctf_pointmaker.left", "Fire onto a surface to create flag")
 	language.Add("tool.lambda_teamsystem_ctf_pointmaker.right", "Fire near a flag to remove it")
