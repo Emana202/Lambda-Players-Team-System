@@ -158,7 +158,7 @@ function LambdaTeams:GetPlayerTeam( ply )
         end
     end
 
-    return ( plyTeam != "" and plyTeam )
+    return ( plyTeam != "" and plyTeam or nil )
 end
 
 function LambdaTeams:AreTeammates( ent, target )
@@ -192,7 +192,7 @@ function LambdaTeams:GetSpawnPoints( teamName )
         if !IsValid( point ) then continue end
         
         local pointTeam = point:GetSpawnTeam()
-        if !teamName and pointTeam != "" or teamName and pointTeam != teamName then continue end
+        if pointTeam != "" and ( !teamName or pointTeam != teamName ) then continue end
 
         points[ #points + 1 ] = point
     end
@@ -496,6 +496,9 @@ if ( SERVER ) then
     local function LambdaOnBeginMove( self, pos, onNavmesh )
         if !teamsEnabled:GetBool() then return end
 
+        local state = self:GetState()
+        if state != "Idle" and state != "FindTarget" then return end
+
         local kothEnt = self.l_KOTH_Entity
         if !IsValid( kothEnt ) or kothEnt:GetIsCaptured() and random( 1, ( kothEnt:GetCapturerName() == kothEnt:GetCapturerTeamName( self ) and 4 or 8 ) ) == 1 then
             local kothEnts = ents_FindByClass( "lambda_koth_point" )
@@ -541,9 +544,6 @@ if ( SERVER ) then
                 self.l_CTF_Flag = ctfFlag
                 return
             end
-
-            local state = self:GetState()
-            if state != "Idle" and state != "FindTarget" then return end
 
             local rndDecision = random( 1, 100 )
             if rndDecision < 30 and stickTogether:GetBool() then
