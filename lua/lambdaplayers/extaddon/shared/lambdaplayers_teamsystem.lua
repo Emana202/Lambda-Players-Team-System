@@ -436,14 +436,15 @@ if ( SERVER ) then
         end
     end
 
-    local function LambdaOnThink( self )
-        if !teamsEnabled:GetBool() then return end
+    local function LambdaOnThink( self, wepent, isdead )
+        if isdead or !teamsEnabled:GetBool() then return end
 
         if CurTime() > self.l_NextEnemyTeamSearchT then
             self.l_NextEnemyTeamSearchT = CurTime() + 1.0
-
+            
             local ene = self:GetEnemy()
             local kothEnt = self.l_KOTH_Entity
+            
             if ( self.l_TeamName and attackOthers:GetBool() or IsValid( kothEnt ) ) and ( !self:InCombat() or !self:CanSee( ene ) ) then
                 local surroundings = self:FindInSphere( nil, 2000, function( ent )
                     if LambdaIsValid( ent ) and ( !LambdaIsValid( ene ) or self:GetRangeSquaredTo( ent ) < self:GetRangeSquaredTo( ene ) ) and self:CanTarget( ent ) and self:CanSee( ent ) then
@@ -509,7 +510,7 @@ if ( SERVER ) then
             self:SetRun( random( 1, 3 ) != 1 and ( !self:IsInRange( kothEnt, capRange ) or !self:CanSee( kothEnt ) ) )
 
             local kothPos = ( kothEnt:GetPos() + VectorRand( -capRange, capRange ) )
-            local area = ( onNavmesh and GetNearestNavArea( kothPos, true ) )
+            local area = ( onNavmesh and GetNearestNavArea( kothPos ) )
             self:RecomputePath( ( IsValid( area ) and area:IsPartiallyVisible( kothEnt:WorldSpaceCenter() ) ) and area:GetClosestPointOnArea( kothPos ) or kothPos )
 
             self.l_KOTH_Entity = kothEnt
@@ -520,9 +521,9 @@ if ( SERVER ) then
         if teamName then
             local hasFlag =  self.l_HasFlag
             local ctfFlag = self.l_CTF_Flag
-            if random( 1, 5 ) == 1 or !IsValid( ctfFlag ) or ctfFlag:GetTeamName() != teamname and self.l_HasFlag then
+            if random( 1, 4 ) == 1 or !IsValid( ctfFlag ) or ctfFlag:GetTeamName() != teamname and self.l_HasFlag then
                 for _, flag in RandomPairs( ents_FindByClass( "lambda_ctf_flag" ) ) do
-                    if IsValid( flag ) and ( hasFlag and flag:GetTeamName() == teamName or !hasFlag and !flag:GetIsCaptureZone() and ( flag:GetTeamName() != teamName and flag:GetIsPickedUp() or !flag:GetIsAtHome() or random( 1, 3 ) == 1 ) ) then 
+                    if flag != ctfFlag and IsValid( flag ) and ( hasFlag and flag:GetTeamName() == teamName or !hasFlag and !flag:GetIsCaptureZone() and ( flag:GetTeamName() != teamName and flag:GetIsPickedUp() or !flag:GetIsAtHome() or random( 1, 3 ) == 1 ) ) then 
                         ctfFlag = flag
                         break
                     end
@@ -533,8 +534,8 @@ if ( SERVER ) then
                 if !hasFlag then
                     self:SetRun( !self:IsInRange( ctfFlag, 500 ) )
                     local flagPos = ( ctfFlag:GetPos() + Vector( random( -300, 300 ), random( -300, 300 ), 0 ) )
-                    local area = ( onNavmesh and GetNearestNavArea( flagPos, true ) )
-                    movePos = ( ( IsValid( area ) and area:IsPartiallyVisible( ctfFlag:WorldSpaceCenter() ) ) and area:GetClosestPointOnArea( flagPos ) or flagPos )
+                    local area = ( onNavmesh and GetNearestNavArea( flagPos ) )
+                    movePos = ( IsValid( area ) and ( area:IsPartiallyVisible( ctfFlag:WorldSpaceCenter() ) and area:GetClosestPointOnArea( flagPos ) or area:GetRandomPoint() ) or flagPos )
                 else
                     self:SetRun( true )
                     movePos = ( ctfFlag.CaptureZone:GetPos() + Vector( random( -50, 50 ), random( -50, 50 ), 0 ) )
@@ -555,7 +556,7 @@ if ( SERVER ) then
                             entPos = ( isentity( entMovePos ) and IsValid( entMovePos ) and entMovePos:GetPos() or entMovePos )
                         end
 
-                        local area = ( onNavmesh and GetNearestNavArea( entPos, true ) )
+                        local area = ( onNavmesh and GetNearestNavArea( entPos ) )
                         local movePos = ( IsValid( area ) and area:GetRandomPoint() or ( entPos + VectorRand( -300, 300 ) ) )
 
                         self:SetRun( random( 1, 5 ) == 1 or !self:IsInRange( movePos, 1500 ) )
