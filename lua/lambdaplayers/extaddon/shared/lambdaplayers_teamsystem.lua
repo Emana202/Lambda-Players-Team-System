@@ -421,19 +421,16 @@ if ( SERVER ) then
     end
 
     local function LambdaOnRespawn( self )
-        local teamName = self.l_TeamName
-        if !teamName or !teamsEnabled:GetBool() then return end
+        if !useSpawnpoints:GetBool() then return end
 
-        if useSpawnpoints:GetBool() then
-            local spawnPoints = LambdaTeams:GetSpawnPoints( teamName )
-            if #spawnPoints > 0 then 
-                local spawnPoint = spawnPoints[ random( #spawnPoints ) ]
-                for _, point in RandomPairs( spawnPoints ) do if !point.IsOccupied then spawnPoint = point end end
+        local spawnPoints = LambdaTeams:GetSpawnPoints( teamName )
+        if #spawnPoints == 0 then return end 
+        
+        local spawnPoint = spawnPoints[ random( #spawnPoints ) ]
+        for _, point in RandomPairs( spawnPoints ) do if !point.IsOccupied then spawnPoint = point end end
 
-                self:SetPos( spawnPoint:GetPos() )
-                self:SetAngles( spawnPoint:GetAngles() )
-            end
-        end
+        self:SetPos( spawnPoint:GetPos() )
+        self:SetAngles( spawnPoint:GetAngles() )
     end
 
     local function LambdaOnThink( self, wepent, isdead )
