@@ -1,6 +1,7 @@
 local ipairs = ipairs
 local IsValid = IsValid
 local pairs = pairs
+local Rand = math.Rand
 local random = math.random
 local table_Count = table.Count
 local team_SetUp = team.SetUp
@@ -145,15 +146,13 @@ function LambdaTeams:GetPlayerTeam( ply )
         if ( CLIENT ) then
             plyTeam = ply:GetNW2String( "lambda_teamname" )
             if !plyTeam or plyTeam == "" then plyTeam = ply:GetNWString( "lambda_teamname" ) end
-        end
-        if ( SERVER ) then
+        else
             plyTeam = ply.l_TeamName
         end
     elseif ply:IsPlayer() then
         if ( CLIENT ) then
             plyTeam = playerTeam:GetString()
-        end
-        if ( SERVER ) then
+        else
             plyTeam = ply:GetInfo( "lambdaplayers_teamsystem_playerteam" )
         end
     end
@@ -215,6 +214,8 @@ if ( SERVER ) then
     local RandomPairs = RandomPairs
     local table_Random = table.Random
     local tobool = tobool
+    local min = math.min
+    local lower = string.lower
 
     local rndBodyGroups = GetConVar( "lambdaplayers_lambda_allowrandomskinsandbodygroups" )
 
@@ -330,15 +331,7 @@ if ( SERVER ) then
         lambda:SetExternalVar( "l_TeamSpawnHealth", teamData.spawnhealth )
         lambda:SetExternalVar( "l_TeamSpawnArmor", teamData.spawnarmor )
         lambda:SetExternalVar( "l_TeamVoiceProfile", teamData.voiceprofile )
-
-        local wepRestrictions = teamData.weaponrestrictions
-        if wepRestrictions then
-            lambda:SetExternalVar( "l_TeamWepRestrictions", wepRestrictions )
-            if !wepRestrictions[ lambda.l_Weapon ] then 
-                local _, rndWep = table_Random( wepRestrictions )
-                lambda:SwitchWeapon( rndWep )
-            end
-        end
+        lambda:SetExternalVar( "l_TeamWepRestrictions", teamData.weaponrestrictions )
     end
 
     local function OnPlayerSpawnedNPC( ply, npc )
@@ -347,7 +340,7 @@ if ( SERVER ) then
     end
 
     local function LambdaOnInitialize( self )
-        self.l_NextEnemyTeamSearchT = CurTime() + 1.0
+        self.l_NextEnemyTeamSearchT = CurTime() + Rand( 0.33, 1.0 )
         self:SetExternalVar( "l_PlyNoTeamColor", self:GetPlyColor() )
 
         self:SimpleTimer( 0.1, function()
@@ -394,6 +387,18 @@ if ( SERVER ) then
                 if voiceProfile then 
                     self.l_VoiceProfile = voiceProfile
                     self:SetNW2String( "lambda_vp", voiceProfile )
+                elseif !self.l_VoiceProfile then
+                    local modelVP = LambdaModelVoiceProfiles[ lower( self:GetModel() ) ]
+                    if modelVP then 
+                        self.l_VoiceProfile = modelVP 
+                        self:SetNW2String( "lambda_vp", modelVP )
+                    end
+                end
+
+                local wepRestrictions = self.l_TeamWepRestrictions
+                if wepRestrictions and !wepRestrictions[ self.l_Weapon ] then 
+                    local _, rndWep = table_Random( wepRestrictions )
+                    self:SwitchWeapon( rndWep )
                 end
             end
         end, true )
@@ -437,18 +442,25 @@ if ( SERVER ) then
         if isdead or !teamsEnabled:GetBool() then return end
 
         if CurTime() > self.l_NextEnemyTeamSearchT then
-            self.l_NextEnemyTeamSearchT = CurTime() + 1.0
-            
-            local ene = self:GetEnemy()
+            self.l_NextEnemyTeamSearchT = CurTime() + Rand( 0.33, 1.0 )
+
             local kothEnt = self.l_KOTH_Entity
-            
-            if ( self.l_TeamName and attackOthers:GetBool() or IsValid( kothEnt ) ) and ( !self:InCombat() or !self:CanSee( ene ) ) then
+            if self.l_TeamName and attackOthers:GetBool() or IsValid( kothEnt ) then
+                local myPos = self:WorldSpaceCenter()
+                local eneDist = ( self:InCombat() and myPos:DistToSqr( self:GetEnemy():WorldSpaceCenter() ) )
+                local myForward = self:GetForward()
+                local dotView = ( validEnemy and 0.33 or 0.5 )
+
                 local surroundings = self:FindInSphere( nil, 2000, function( ent )
-                    if LambdaIsValid( ent ) and ( !LambdaIsValid( ene ) or self:GetRangeSquaredTo( ent ) < self:GetRangeSquaredTo( ene ) ) and self:CanTarget( ent ) and self:CanSee( ent ) then
-                        local areTeammates = LambdaTeams:AreTeammates( self, ent )
-                        if areTeammates == false then return true end
-                        if IsValid( kothEnt ) and kothEnt == ent.l_KOTH_Entity and ent:IsInRange( kothEnt, 1000 ) and !areTeammates then return true end
-                    end
+                    if !LambdaIsValid( ent ) then return false end
+
+                    local entPos = ent:WorldSpaceCenter()
+                    local los = ( entPos - myPos ); los.z = 0
+                    los:Normalize()
+                    if los:Dot( myForward ) < dotView or eneDist and myPos:DistToSqr( entPos ) >= eneDist or !self:CanTarget( ent ) or !self:CanSee( ent ) then return false end
+
+                    local areTeammates = LambdaTeams:AreTeammates( self, ent )
+                    return ( areTeammates == false or areTeammates == nil and IsValid( kothEnt ) and kothEnt == ent.l_KOTH_Entity and ent:IsInRange( kothEnt, 1000 ) )
                 end )
 
                 if #surroundings > 0 then 
@@ -456,18 +468,16 @@ if ( SERVER ) then
                 end
             end
         end
-
-        local flag = self.l_CTF_Flag
-        if IsValid( flag ) and self:InCombat() and ( self.l_HasFlag or flag:GetTeamName() != self.l_TeamName and self:IsInRange( flag, 384 ) and self:CanSee( flag ) ) then
-            self.l_movepos = flag:GetPos()
-        end
     end
     
     local function LambdaCanTarget( self, ent )
-        if self.l_HasFlag and ent.IsLambdaPlayer and !ent.l_HasFlag and ( !ent:InCombat() or ent:GetEnemy() != self or !ent:IsInRange( self, 1024 ) ) then return true end
         if teamsEnabled:GetBool() and LambdaTeams:AreTeammates( self, ent ) then return true end
     end
-    
+
+    local function LambdaOnAttackTarget( self, ent )
+        if self.l_HasFlag and ent.IsLambdaPlayer and !ent.l_HasFlag and ( !ent:InCombat() or ent:GetEnemy() != self or !ent:IsInRange( self, 768 ) ) then return true end
+    end
+
     local function LambdaOnInjured( self, dmginfo )
         local attacker = dmginfo:GetAttacker()
         if attacker == self or !LambdaTeams:AreTeammates( self, attacker ) or !teamsEnabled:GetBool() then return end
@@ -480,16 +490,18 @@ if ( SERVER ) then
         local attacker = dmginfo:GetAttacker()
         if attacker == self or !LambdaIsValid( attacker ) then return end
 
-        if LambdaTeams:AreTeammates( self, victim ) and self:CanTarget( attacker ) and ( self:IsInRange( victim, 500 ) or self:CanSee( victim ) ) then
+        if LambdaTeams:AreTeammates( self, victim ) and self:CanTarget( attacker ) and ( self:IsInRange( victim, random( 400, 700 ) ) or self:CanSee( victim ) ) then
             self:AttackTarget( attacker )
             return
         end
 
-        if LambdaTeams:AreTeammates( self, attacker ) and self:CanTarget( victim ) and ( self:IsInRange( attacker, 500 ) or self:CanSee( attacker ) ) then
+        if LambdaTeams:AreTeammates( self, attacker ) and self:CanTarget( victim ) and ( self:IsInRange( attacker, random( 400, 700 ) ) or self:CanSee( attacker ) ) then
             self:AttackTarget( victim )
             return 
         end
     end
+
+    local rndMovePos = Vector()
     
     local function LambdaOnBeginMove( self, pos, onNavmesh )
         if !teamsEnabled:GetBool() then return end
@@ -498,17 +510,25 @@ if ( SERVER ) then
         if state != "Idle" and state != "FindTarget" then return end
 
         local kothEnt = self.l_KOTH_Entity
-        if !IsValid( kothEnt ) or kothEnt:GetIsCaptured() and random( 1, ( kothEnt:GetCapturerName() == kothEnt:GetCapturerTeamName( self ) and 4 or 8 ) ) == 1 then
+        if !IsValid( kothEnt ) or kothEnt:GetIsCaptured() and random( 1, ( kothEnt:GetCapturerName() == kothEnt:GetCapturerTeamName( self ) and 2 or 8 ) ) == 1 then
             local kothEnts = ents_FindByClass( "lambda_koth_point" )
             if #kothEnts > 0 then kothEnt = kothEnts[ random( #kothEnts ) ] end
         end
         if IsValid( kothEnt ) then
             local capRange = kothCapRange:GetInt()
-            self:SetRun( random( 1, 3 ) != 1 and ( !self:IsInRange( kothEnt, capRange ) or !self:CanSee( kothEnt ) ) )
 
-            local kothPos = ( kothEnt:GetPos() + VectorRand( -capRange, capRange ) )
-            local area = ( onNavmesh and GetNearestNavArea( kothPos ) )
-            self:RecomputePath( ( IsValid( area ) and area:IsPartiallyVisible( kothEnt:WorldSpaceCenter() ) ) and area:GetClosestPointOnArea( kothPos ) or kothPos )
+            local movePos
+            local kothPos = kothEnt:GetPos()
+            if !kothEnt:GetIsCaptured() or kothEnt:GetContesterTeam() != "" or kothEnt:GetCapturerName() != kothEnt:GetCapturerTeamName( self ) then
+                rndMovePos.x = random( -150, 150 )
+                rndMovePos.y = random( -150, 150 )
+                movePos = ( kothPos + rndMovePos )
+            else
+                movePos = self:GetRandomPosition( kothPos, capRange )
+            end
+
+            self:RecomputePath( movePos )
+            self:SetRun( random( 1, 3 ) != 1 and ( !self:IsInRange( movePos, capRange ) or !self:CanSee( kothEnt ) ) )
 
             self.l_KOTH_Entity = kothEnt
             return
@@ -516,26 +536,28 @@ if ( SERVER ) then
 
         local teamName = self.l_TeamName
         if teamName then
-            local hasFlag =  self.l_HasFlag
-            local ctfFlag = self.l_CTF_Flag
-            if random( 1, 4 ) == 1 or !IsValid( ctfFlag ) or ctfFlag:GetTeamName() != teamname and self.l_HasFlag then
+            local ctfFlag, hasFlag = self.l_CTF_Flag, self.l_HasFlag
+            if !IsValid( ctfFlag ) or hasFlag and ctfFlag:GetTeamName() != teamName or random( 1, 2 ) == 1 then
                 for _, flag in RandomPairs( ents_FindByClass( "lambda_ctf_flag" ) ) do
-                    if flag != ctfFlag and IsValid( flag ) and ( hasFlag and flag:GetTeamName() == teamName or !hasFlag and !flag:GetIsCaptureZone() and ( flag:GetTeamName() != teamName and flag:GetIsPickedUp() or !flag:GetIsAtHome() or random( 1, 3 ) == 1 ) ) then 
-                        ctfFlag = flag
-                        break
-                    end
+                    if flag == ctfFlag or !IsValid( flag ) then continue end
+
+                    local flagTeam = flag:GetTeamName()
+                    if hasFlag and flagTeam != teamName or !hasFlag and flag:GetIsCaptureZone() then continue end
+
+                    ctfFlag = flag
+                    break
                 end
             end
-            if IsValid( ctfFlag ) then                
+            if IsValid( ctfFlag ) then
                 local movePos
-                if !hasFlag then
-                    self:SetRun( !self:IsInRange( ctfFlag, 500 ) )
-                    local flagPos = ( ctfFlag:GetPos() + Vector( random( -300, 300 ), random( -300, 300 ), 0 ) )
-                    local area = ( onNavmesh and GetNearestNavArea( flagPos ) )
-                    movePos = ( IsValid( area ) and ( area:IsPartiallyVisible( ctfFlag:WorldSpaceCenter() ) and area:GetClosestPointOnArea( flagPos ) or area:GetRandomPoint() ) or flagPos )
-                else
+                if hasFlag or ctfFlag:GetTeamName() != teamName then
+                    rndMovePos.x = random( -40, 40 )
+                    rndMovePos.y = random( -40, 40 )
+                    movePos = ( ( hasFlag and ctfFlag.CaptureZone or ctfFlag ):GetPos() + rndMovePos )
                     self:SetRun( true )
-                    movePos = ( ctfFlag.CaptureZone:GetPos() + Vector( random( -50, 50 ), random( -50, 50 ), 0 ) )
+                else
+                    movePos = self:GetRandomPosition( ctfFlag:GetPos(), 300 )
+                    self:SetRun( !self:IsInRange( movePos, 500 ) )
                 end
 
                 self:RecomputePath( movePos )
@@ -543,36 +565,27 @@ if ( SERVER ) then
                 return
             end
 
-            local rndDecision = random( 1, 100 )
-            if rndDecision < 30 and stickTogether:GetBool() then
-                for _, ent in RandomPairs( ents_GetAll() ) do
-                    if ent != self and LambdaTeams:AreTeammates( self, ent ) and ent:Alive() and ( !ent:IsPlayer() or !ignorePlys:GetBool() ) then
-                        local entPos = ent:GetPos()
-                        if ent.l_issmoving then 
-                            local entMovePos = ent.l_movepos
-                            entPos = ( isentity( entMovePos ) and IsValid( entMovePos ) and entMovePos:GetPos() or entMovePos )
+            if random( 1, 3 ) == 1 then
+                local combatChance = ( self:GetCombatChance() * min( self:Health() / self:GetMaxHealth(), 1.0 ) )
+                if random( 1, 100 ) <= combatChance then
+                    if huntDown:GetBool() and attackOthers:GetBool() then
+                        for _, ent in RandomPairs( ents_GetAll() ) do
+                            if ent != self and LambdaTeams:AreTeammates( self, ent ) == false and self:CanTarget( ent ) then
+                                local rndPos = ( self:GetRandomPosition( ent:GetPos(), random( 300, 550 ) ) )
+                                self:SetRun( random( 1, 3 ) == 1 )
+                                self:RecomputePath( rndPos )
+                                return
+                            end
                         end
-
-                        local area = ( onNavmesh and GetNearestNavArea( entPos ) )
-                        local movePos = ( IsValid( area ) and area:GetRandomPoint() or ( entPos + VectorRand( -300, 300 ) ) )
-
-                        self:SetRun( random( 1, 5 ) == 1 or !self:IsInRange( movePos, 1500 ) )
-                        self:RecomputePath( movePos )
-
-                        return 
                     end
-                end
-            elseif rndDecision > 70 and huntDown:GetBool() and attackOthers:GetBool() then
-                for _, ent in RandomPairs( ents_GetAll() ) do
-                    if ent != self and LambdaTeams:AreTeammates( self, ent ) == false and ent:Alive() and self:CanTarget( ent ) then
-                        local entPos = ent:GetPos()
-                        local area = ( onNavmesh and GetNearestNavArea( entPos, true ) )
-                        local movePos = ( IsValid( area ) and area:GetRandomPoint() or ( entPos + VectorRand( -300, 300 ) ) )
-
-                        self:SetRun( random( 1, 5 ) == 1 )
-                        self:RecomputePath( movePos )
-                        
-                        return
+                elseif stickTogether:GetBool() then
+                    for _, ent in RandomPairs( ents_GetAll() ) do
+                        if ent != self and LambdaTeams:AreTeammates( self, ent ) and ent:Alive() and ( !ent:IsPlayer() or !ignorePlys:GetBool() ) then
+                            local movePos = self:GetRandomPosition( ent:GetPos(), random( 150, 350 ) )
+                            self:SetRun( random( 1, 4 ) == 1 or !self:IsInRange( movePos, 1500 ) )
+                            self:RecomputePath( movePos )
+                            return 
+                        end
                     end
                 end
             end
@@ -580,17 +593,10 @@ if ( SERVER ) then
     end
 
     local function LambdaCanSwitchWeapon( self, name, data )
-        if name == "none" or name == "physgun" or !self.l_TeamName or !teamsEnabled:GetBool() then return end
+        if !self.l_TeamName or name == "none" or name == "physgun" or !teamsEnabled:GetBool() then return end
 
         local teamPerms = self.l_TeamWepRestrictions
-        if teamPerms and !teamPerms[ name ] then
-            if data.islethal and !self:HasLethalWeapon() then 
-                local _, rndWep = table_Random( teamPerms )
-                self:SwitchWeapon( rndWep )
-            end
-
-            return true 
-        end
+        if teamPerms and !teamPerms[ name ] then return true end
     end
 
     local function OnPlayerShouldTakeDamage( ply, attacker )
@@ -633,6 +639,7 @@ if ( SERVER ) then
     hook.Add( "LambdaOnRespawn", modulePrefix .. "LambdaOnRespawn", LambdaOnRespawn )
     hook.Add( "LambdaOnThink", modulePrefix .. "OnThink", LambdaOnThink )
     hook.Add( "LambdaCanTarget", modulePrefix .. "OnCanTarget", LambdaCanTarget )
+    hook.Add( "LambdaOnAttackTarget", modulePrefix .. "OnAttackTarget", LambdaOnAttackTarget )
     hook.Add( "LambdaOnInjured", modulePrefix .. "OnInjured", LambdaOnInjured )
     hook.Add( "LambdaOnOtherInjured", modulePrefix .. "OnOtherInjured", LambdaOnOtherInjured )
     hook.Add( "LambdaOnBeginMove", modulePrefix .. "OnBeginMove", LambdaOnBeginMove )
@@ -1035,6 +1042,8 @@ if ( CLIENT ) then
             PlayClientSound( "buttons/button15.wav" )
         end
 
+        local mdlPreviewAng = Angle()
+
         LAMBDAPANELS:CreateButton( mainscroll, TOP, "Add Playermodel", function()
             local modelframe = LAMBDAPANELS:CreateFrame( "Team Playermodels", 800, 500 )
             
@@ -1048,7 +1057,8 @@ if ( CLIENT ) then
             modelpreview:SetModel( "" )
 
             function modelpreview:LayoutEntity( Entity )
-                Entity:SetAngles( Angle( 0, RealTime() * 20 % 360, 0 ) )
+                mdlPreviewAng[ 2 ] = ( RealTime() * 20 % 360 )
+                Entity:SetAngles( mdlPreviewAng )
             end
 
             local modelscroll = LAMBDAPANELS:CreateScrollPanel( modelpanel, false, FILL )

@@ -28,12 +28,9 @@ if ( SERVER ) then
     local SpriteTrail = util.SpriteTrail
     local TraceLine = util.TraceLine
     local downtracetbl = {}
-    local dropZ = Vector( 0, 0, 32756 )
-    local returnZ = Vector( 0, 0, 15 )
     local keynames = { "A", "B", "C", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z" }
     local color_glacier = Color( 130, 164, 192 )
     local timer_Simple = timer.Simple
-    local spawnOffset = Vector( 0, 0, 15 )
     local FindInSphere = ents.FindInSphere
     local ipairs = ipairs
     local random = math.random
@@ -51,7 +48,7 @@ if ( SERVER ) then
             self:SetModel( "models/lambdaplayers/ctf_flag/briefcase.mdl" )
         end
 
-        timer_Simple( 0, function() self:SetPos( self:GetPos() + spawnOffset ) end )
+        timer_Simple( 0, function() self:SetPos( self:GetPos() + vector_up * 15 ) end )
 
         self.CaptureZone = ents_Create( "base_anim" )
         self.CaptureZone:SetModel( "models/props_combine/combine_mine01.mdl" )
@@ -152,7 +149,7 @@ if ( SERVER ) then
     end
 
     function ENT:ReturnToZone()
-        self:SetPos( self.CaptureZone:GetPos() + returnZ )
+        self:SetPos( self.CaptureZone:GetPos() + vector_up * 15 )
         self:SetIsAtHome( true )
         self:SetFlagHolder( false )
     end 
@@ -228,7 +225,7 @@ if ( SERVER ) then
                 if IsValid( self.Trail ) then self.Trail:Remove() end
 
                 downtracetbl.start = self:GetPos()
-                downtracetbl.endpos = ( self:GetPos() - dropZ )
+                downtracetbl.endpos = ( self:GetPos() - vector_up * 32756 )
                 downtracetbl.filter = self
                 local downtrace = TraceLine( downtracetbl )
                 self:SetPos( downtrace.HitPos - downtrace.HitNormal * self:OBBMins().z )
