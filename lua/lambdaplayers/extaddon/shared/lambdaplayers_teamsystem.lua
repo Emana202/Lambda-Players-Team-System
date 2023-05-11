@@ -1,19 +1,31 @@
 local ipairs = ipairs
 local IsValid = IsValid
+local CurTime = CurTime
+local tostring = tostring
 local pairs = pairs
+local GetGlobalInt = GetGlobalInt
+local SetGlobalInt = SetGlobalInt
 local Rand = math.Rand
 local random = math.random
 local table_Count = table.Count
+local table_Empty = table.Empty
 local team_SetUp = team.SetUp
 local team_SetColor = team.SetColor
+local team_GetColor = team.GetColor
 local net = net
 local ents_GetAll = ents.GetAll
 local ents_FindByClass = ents.FindByClass
+local player_GetAll = player.GetAll
+local table_Add = table.Add
 local table_Copy = table.Copy
 local timer_Simple = timer.Simple
+local timer_Create = timer.Create
+local timer_Remove = timer.Remove
 local file_Exists = file.Exists
+
 local modulePrefix = "Lambda_TeamSystem_"
 local defaultPlyClr = Color( 255, 255, 100 )
+local color_glacier = Color( 130, 164, 192 )
 
 local ignorePlys = GetConVar( "ai_ignoreplayers" )
 
@@ -109,6 +121,163 @@ local plyUseSpawnpoints = CreateLambdaConvar( "lambdaplayers_teamsystem_plyusesp
 local drawTeamName      = CreateLambdaConvar( "lambdaplayers_teamsystem_drawteamname", 1, true, true, false, "Enables drawing team names above your Lambda teammates.", 0, 1, { name = "Draw Team Names", type = "Bool", category = "Team System" } )
 local drawHalo          = CreateLambdaConvar( "lambdaplayers_teamsystem_drawhalo", 1, true, true, false, "Enables drawing halos around you Lambda Teammates", 0, 1, { name = "Draw Halos", type = "Bool", category = "Team System" } )
 
+---
+
+local gmMatchTime = CreateLambdaConvar( "lambdaplayers_teamsystem_gamemodes_gametime", 5, true, false, false, "The time the gamemode match will take to end in minutes. Set to zero for an endless match.", 0, 30, { name = "Match Time", type = "Slider", decimals = 0, category = "Team System - Gamemodes" } )
+local gmPointsLimit = CreateLambdaConvar( "lambdaplayers_teamsystem_gamemodes_pointslimit", 30, true, false, false, "How many points should the team score in gamemode match in order to win. Set to zero to disable points", 0, 1000, { name = "Points Limit", type = "Slider", decimals = 0, category = "Team System - Gamemodes" } )
+
+LambdaTeams.TeamPoints = LambdaTeams.TeamPoints or {}
+
+local gamemodeName, pointsName
+local nextTimerProgressT = ( CurTime() + 1 )
+
+local function GetTheMatchStats( endedPrematurely )
+    local winnerTeam, winnerClr
+    local curPoints, samePoints = 0, 0
+
+    local contesters = {}
+    for teamName, globalName in pairs( LambdaTeams.TeamPoints ) do
+        local teamPoints = GetGlobalInt( globalName, 0 )
+        local teamColor = LambdaTeams:GetTeamColor( teamName, true )
+
+        if teamPoints > curPoints then 
+            winnerTeam = teamName
+            winnerClr = teamColor
+            curPoints = teamPoints
+        elseif teamPoints == curPoints then
+            samePoints = ( samePoints + 1 )
+        end
+
+        contesters[ #contesters + 1 ] = { teamName, teamPoints, teamColor }
+    end
+
+    if samePoints != #contesters then
+        LambdaPlayers_ChatAdd( nil, color_white, "[LTS] ", winnerClr, winnerTeam, color_glacier, " won the match of ", color_white, gamemodeName, color_glacier, " with total of ", color_white, tostring( curPoints ), color_glacier, " ", pointsName, ( curPoints > 1 and "s" or "" ), "!" )
+
+        for _, contestData in ipairs( contesters ) do
+            local contestTeam = contestData[ 1 ]
+            if contestTeam == winnerTeam then continue end
+
+            local contestPoints = contestData[ 2 ]
+            if contestPoints == 0 then
+                LambdaPlayers_ChatAdd( nil, color_white, "[LTS] ", contestData[ 3 ], contestTeam, color_glacier, " ended up with no ", pointsName, "s at all :(" )
+            else
+                LambdaPlayers_ChatAdd( nil, color_white, "[LTS] ", contestData[ 3 ], contestTeam, color_glacier, " ended with total of ", color_white, tostring( contestPoints ), color_glacier, " ", pointsName, ( contestPoints > 1 and "s" or "" ) )
+            end
+        end
+    elseif !endedPrematurely then
+        LambdaPlayers_ChatAdd( nil, color_white, "[LTS] ", color_glacier, "Stalemate! Each team got the same amount of ", pointsName, ( curPoints > 1 and "s" or "" ), "!" )
+    end
+end
+
+local function StopGameMatch()
+    SetGlobalInt( "LambdaTeamMatch_GameID", 0 )
+    timer_Remove( "LambdaTeamMatch_ThinkTimer" )
+end
+
+local function GameMatchThinkTimer()
+    if !teamsEnabled:GetBool() then StopGameMatch() return end
+
+    local pointLimit = GetGlobalInt( "LambdaTeamMatch_PointLimit" )
+    for teamName, globalName in pairs( LambdaTeams.TeamPoints ) do
+        local teamPoints = GetGlobalInt( globalName, 0 )
+        if teamPoints < pointLimit then continue end
+
+        GetTheMatchStats()
+        StopGameMatch()
+        return
+    end
+
+    local timeRemain = GetGlobalInt( "LambdaTeamMatch_TimeRemaining", 0 )
+    if timeRemain != -1 and CurTime() >= nextTimerProgressT then
+        if timeRemain == 0 then
+            LambdaPlayers_ChatAdd( nil, color_white, "[LTS] ", color_glacier, "Reached the time limit of the match!" )
+            GetTheMatchStats()
+            StopGameMatch()
+            return
+        end
+
+        nextTimerProgressT = ( CurTime() + 1 )
+        SetGlobalInt( "LambdaTeamMatch_TimeRemaining", ( timeRemain - 1 ) )
+    end
+end
+
+local function StartGamemode( ply, gameIndex, time, pointLimit )
+    if !ply:IsSuperAdmin() then
+        LambdaPlayers_Notify( ply, "You must be a Super Admin in order to start a match!", 1, "buttons/button10.wav" )
+        return
+    end
+
+    local curIndex = GetGlobalInt( "LambdaTeamMatch_GameID", 0 )
+    if curIndex != 0 then
+        LambdaPlayers_ChatAdd( nil, color_white, "[LTS] ", color_glacier, "Player ", team_GetColor( ply:Team() ), ply:Nick(), color_glacier, " ended the match prematurely!" )
+        GetTheMatchStats( true )
+        StopGameMatch()
+        return
+    end
+
+    if !teamsEnabled:GetBool() then 
+        LambdaPlayers_Notify( ply, "You must have Team System enabled!", 1, "buttons/button10.wav" )
+        return 
+    end
+
+    if gameIndex == 1 and #ents_FindByClass( "lambda_koth_point" ) == 0 then
+        LambdaPlayers_Notify( ply, "You must have atleast one KOTH Point exist in order to start!", 1, "buttons/button10.wav" )
+        return
+    elseif gameIndex == 2 and #ents_FindByClass( "lambda_ctf_flag" ) <= 1 then
+        LambdaPlayers_Notify( ply, "You must have atleast two CTF Flags exist for each team in order to start!", 1, "buttons/button10.wav" )
+        return
+    end
+
+    SetGlobalInt( "LambdaTeamMatch_GameID", gameIndex )
+    SetGlobalInt( "LambdaTeamMatch_PointLimit", gmPointsLimit:GetInt() )
+
+    for teamName, globalName in pairs( LambdaTeams.TeamPoints ) do
+        SetGlobalInt( globalName, 0 )
+        LambdaTeams.TeamPoints[ teamName ] = nil
+    end
+    for _, ply in ipairs( table_Add( GetLambdaPlayers(), player_GetAll() ) ) do
+        local plyTeam = LambdaTeams:GetPlayerTeam( ply )
+        if plyTeam then LambdaTeams.TeamPoints[ plyTeam ] = "LambdaTeamMatch_TeamPoints_" .. plyTeam end
+    end
+
+    pointsName = "point"
+    if gameIndex == 1 then
+        gamemodeName = "King Of The Hill"
+    elseif gameIndex == 2 then
+        gamemodeName = "Capture The Flag"
+        pointsName = "flag capture"
+    elseif gameIndex == 3 then
+        gamemodeName = "Team Deathmatch"
+    end
+
+    local timeLimit = gmMatchTime:GetInt()
+    if timeLimit != 0 then
+        nextTimerProgressT = ( CurTime() + 1 )
+        SetGlobalInt( "LambdaTeamMatch_TimeRemaining", ( timeLimit * 60 ) )
+    else
+        SetGlobalInt( "LambdaTeamMatch_TimeRemaining", -1 )
+    end
+
+    timer_Create( "LambdaTeamMatch_ThinkTimer", 0.1, 0, GameMatchThinkTimer )
+end
+
+--
+
+CreateLambdaConsoleCommand( "lambdaplayers_teamsystem_koth_startmatch", function( ply )
+    StartGamemode( ply, 1 )
+end, false, "Start the match of the King Of The Hill gamemode", { name = "Start KOTH Match", category = "Team System - Gamemodes" } )
+
+CreateLambdaConsoleCommand( "lambdaplayers_teamsystem_ctf_startmatch", function( ply )
+    StartGamemode( ply, 2 )
+end, false, "Start the match of the Capture The Flag gamemode", { name = "Start CTF Match", category = "Team System - Gamemodes" } )
+
+CreateLambdaConsoleCommand( "lambdaplayers_teamsystem_tdm_startmatch", function( ply )
+    StartGamemode( ply, 3 )
+end, false, "Start the match of the Team Deathmatch gamemode", { name = "Start TDM Match", category = "Team System - Gamemodes" } )
+
+--
+
 CreateLambdaConvar( "lambdaplayers_teamsystem_koth_capturerate", 0.2, true, false, false, "The speed rate of capturing the KOTH Points.", 0.01, 5.0, { name = "Capture Rate", type = "Slider", decimals = 2, category = "Team System - KOTH" } )
 local kothCapRange = CreateLambdaConvar( "lambdaplayers_teamsystem_koth_capturerange", 500, true, false, false, "How close player should be to start capturing the point.", 100, 1000, { name = "Capture Range", type = "Slider", decimals = 0, category = "Team System - KOTH" } )
 
@@ -116,6 +285,8 @@ local kothIconEnabled = CreateLambdaConvar( "lambdaplayers_teamsystem_koth_icon_
 local kothIconDrawVisible = CreateLambdaConvar( "lambdaplayers_teamsystem_koth_icon_alwaysdraw", 0, true, true, false, "If the icon should always be drawn no matter if it's visible.", 0, 1, { name = "Always Draw Icon", type = "Bool", category = "Team System - KOTH" } )
 local kothIconFadeStartDist = CreateLambdaConvar( "lambdaplayers_teamsystem_koth_icon_fadeinstartdist", 2000, true, true, false, "How far you should be from the icon for it to completely fade out of view.", 0, 4096, { name = "Icon Fade In Start", type = "Slider", decimals = 0, category = "Team System - KOTH" } )
 local kothIconFadeEndDist = CreateLambdaConvar( "lambdaplayers_teamsystem_koth_icon_fadeinenddist", 500, true, true, false, "How close you should be from the icon for it to become fully visible.", 0, 4096, { name = "Icon Fade In End", type = "Slider", decimals = 0, category = "Team System - KOTH" } )
+
+--
 
 CreateLambdaConvar( "lambdaplayers_teamsystem_ctf_returntime", 15, true, false, false, "The time Lambda Flag can be in dropped state before returning to its capture zone.", 0, 120, { name = "Time Before Returning", type = "Slider", decimals = 0, category = "Team System - CTF" } )
 
@@ -132,6 +303,31 @@ CreateLambdaConvar( "lambdaplayers_teamsystem_ctf_snd_ondrop", "lambdaplayers/ct
 CreateLambdaConvar( "lambdaplayers_teamsystem_ctf_snd_onreturn", "lambdaplayers/ctf/flagreturn.mp3", true, true, false, "The sound that plays when the CTF Flag has returned to its base.", 0, 1, { name = "Sound - On Flag Return", type = "Text", category = "Team System - CTF" } )
 
 ---
+
+function LambdaTeams:GetCurrentGamemodeID()
+    return GetGlobalInt( "LambdaTeamMatch_GameID", 0 )
+end
+
+function LambdaTeams:GamemodeMatchActive()
+    return ( LambdaTeams:GetCurrentGamemodeID() != 0 )
+end
+
+function LambdaTeams:AreTeamsHostile()
+    return ( LambdaTeams:GamemodeMatchActive() or attackOthers:GetBool() )
+end
+
+function LambdaTeams:GetTeamPoints( teamName )
+    return ( GetGlobalInt( "LambdaTeamMatch_TeamPoints_" .. teamName, 0 ) )
+end
+
+function LambdaTeams:AddTeamPoints( teamName, count )
+    local teamPoints = LambdaTeams.TeamPoints[ teamName ]
+    if !teamPoints then
+        teamPoints = "LambdaTeamMatch_TeamPoints_" .. teamName
+        LambdaTeams.TeamPoints[ teamName ] = teamPoints
+    end
+    SetGlobalInt( teamPoints, ( GetGlobalInt( teamPoints, 0 ) + count ) )
+end
 
 function LambdaTeams:GetTeamColor( teamName, realColor )
     local data = LambdaTeams.TeamData[ teamName ]
@@ -208,13 +404,14 @@ if ( SERVER ) then
     util.AddNetworkString( "lambda_teamsystem_updatedata" )
     util.AddNetworkString( "lambda_teamsystem_sendupdateddata" )
 
-    local CurTime = CurTime
     local GetNearestNavArea = navmesh.GetNearestNavArea
     local VectorRand = VectorRand
+    local FrameTime = FrameTime
     local RandomPairs = RandomPairs
     local table_Random = table.Random
     local tobool = tobool
     local min = math.min
+    local abs = math.abs
     local lower = string.lower
 
     local rndBodyGroups = GetConVar( "lambdaplayers_lambda_allowrandomskinsandbodygroups" )
@@ -445,7 +642,7 @@ if ( SERVER ) then
             self.l_NextEnemyTeamSearchT = CurTime() + Rand( 0.33, 1.0 )
 
             local kothEnt = self.l_KOTH_Entity
-            if self.l_TeamName and attackOthers:GetBool() or IsValid( kothEnt ) then
+            if self.l_TeamName and LambdaTeams:AreTeamsHostile() or IsValid( kothEnt ) then
                 local myPos = self:WorldSpaceCenter()
                 local eneDist = ( self:InCombat() and myPos:DistToSqr( self:GetEnemy():WorldSpaceCenter() ) )
                 local myForward = self:GetForward()
@@ -537,7 +734,7 @@ if ( SERVER ) then
         local teamName = self.l_TeamName
         if teamName then
             local ctfFlag, hasFlag = self.l_CTF_Flag, self.l_HasFlag
-            if !IsValid( ctfFlag ) or hasFlag and ctfFlag:GetTeamName() != teamName or random( 1, 2 ) == 1 then
+            if !IsValid( ctfFlag ) or hasFlag and ctfFlag:GetTeamName() != teamName or random( 1, 3 ) == 1 then
                 for _, flag in RandomPairs( ents_FindByClass( "lambda_ctf_flag" ) ) do
                     if flag == ctfFlag or !IsValid( flag ) then continue end
 
@@ -556,6 +753,15 @@ if ( SERVER ) then
                     movePos = ( ( hasFlag and ctfFlag.CaptureZone or ctfFlag ):GetPos() + rndMovePos )
                     self:SetRun( true )
                 else
+                    if ctfFlag:GetTeamName() == teamName and ctfFlag:GetIsPickedUp() then
+                        local flagHolder = ctfFlag:GetFlagHolderEnt()
+                        if IsValid( flagHolder ) and self:CanTarget( flagHolder ) then
+                            self:AttackTarget( flagHolder )
+                            self.l_CTF_Flag = ctfFlag
+                            return
+                        end
+                    end
+
                     movePos = self:GetRandomPosition( ctfFlag:GetPos(), 300 )
                     self:SetRun( !self:IsInRange( movePos, 500 ) )
                 end
@@ -568,7 +774,7 @@ if ( SERVER ) then
             if random( 1, 3 ) == 1 then
                 local combatChance = ( self:GetCombatChance() * min( self:Health() / self:GetMaxHealth(), 1.0 ) )
                 if random( 1, 100 ) <= combatChance then
-                    if huntDown:GetBool() and attackOthers:GetBool() then
+                    if huntDown:GetBool() and LambdaTeams:AreTeamsHostile() then
                         for _, ent in RandomPairs( ents_GetAll() ) do
                             if ent != self and LambdaTeams:AreTeammates( self, ent ) == false and self:CanTarget( ent ) then
                                 local rndPos = ( self:GetRandomPosition( ent:GetPos(), random( 300, 550 ) ) )
@@ -633,6 +839,22 @@ if ( SERVER ) then
         end
     end
 
+    local function LambdaOnKilled( lambda, dmginfo )
+        local gamemodeID = LambdaTeams:GetCurrentGamemodeID()
+        if gamemodeID == 3 then
+            local attackerTeam = LambdaTeams:GetPlayerTeam( dmginfo:GetAttacker() )
+            if attackerTeam then LambdaTeams:AddTeamPoints( attackerTeam, 1 ) end
+        end
+    end
+
+    local function OnPlayerDeath( ply, inflictor, attacker )
+        local gamemodeID = LambdaTeams:GetCurrentGamemodeID()
+        if gamemodeID == 3 then
+            local attackerTeam = LambdaTeams:GetPlayerTeam( attacker )
+            if attackerTeam then LambdaTeams:AddTeamPoints( attackerTeam, 1 ) end
+        end
+    end
+
     hook.Add( "PlayerSpawnedNPC", modulePrefix .. "OnPlayerSpawnedNPC", OnPlayerSpawnedNPC )
     hook.Add( "LambdaOnInitialize", modulePrefix .. "LambdaOnInitialize", LambdaOnInitialize )
     hook.Add( "LambdaPostRecreated", modulePrefix .. "LambdaPostRecreated", LambdaPostRecreated )
@@ -641,12 +863,14 @@ if ( SERVER ) then
     hook.Add( "LambdaCanTarget", modulePrefix .. "OnCanTarget", LambdaCanTarget )
     hook.Add( "LambdaOnAttackTarget", modulePrefix .. "OnAttackTarget", LambdaOnAttackTarget )
     hook.Add( "LambdaOnInjured", modulePrefix .. "OnInjured", LambdaOnInjured )
+    hook.Add( "LambdaOnKilled", modulePrefix .. "OnKilled", LambdaOnKilled )
     hook.Add( "LambdaOnOtherInjured", modulePrefix .. "OnOtherInjured", LambdaOnOtherInjured )
     hook.Add( "LambdaOnBeginMove", modulePrefix .. "OnBeginMove", LambdaOnBeginMove )
     hook.Add( "LambdaCanSwitchWeapon", modulePrefix .. "LambdaCanSwitchWeapon", LambdaCanSwitchWeapon )
     hook.Add( "PlayerShouldTakeDamage", modulePrefix .. "OnPlayerShouldTakeDamage", OnPlayerShouldTakeDamage )
     hook.Add( "PlayerInitialSpawn", modulePrefix .. "OnPlayerInitialSpawn", OnPlayerInitialSpawn )
     hook.Add( "PlayerSpawn", modulePrefix .. "OnPlayerSpawn", OnPlayerSpawn )
+    hook.Add( "PlayerDeath", modulePrefix .. "OnPlayerDeath", OnPlayerDeath )
 
 end
 
@@ -659,6 +883,8 @@ if ( CLIENT ) then
     local file_Find = file.Find
     local string_Replace = string.Replace
     local string_EndsWith = string.EndsWith
+    local FormattedTime = string.FormattedTime
+    local SimpleTextOutlined = draw.SimpleTextOutlined
     local DrawText = draw.DrawText
     local ScrW = ScrW
     local ScrH = ScrH
@@ -667,11 +893,37 @@ if ( CLIENT ) then
     local AddHalo = halo.Add
     local LerpVector = LerpVector
     local vec_white = Vector( 1, 1, 1 )
+    local CreateFont = surface.CreateFont
+    local table_Add = table.Add
 
     local uiScale = GetConVar( "lambdaplayers_uiscale" )
+    local function UpdateFont()
+        CreateFont( "lambda_teamsystem_matchtimer", {
+            font = "ChatFont",
+            extended = false,
+            size = LambdaScreenScale( 15 + uiScale:GetFloat() ),
+            weight = 500,
+            blursize = 0,
+            scanlines = 0,
+            antialias = true,
+            underline = false,
+            italic = false,
+            strikeout = false,
+            symbol = false,
+            rotary = false,
+            shadow = false,
+            additive = false,
+            outline = false,
+        } )
+    end
+    UpdateFont()
+    cvars.AddChangeCallback( "lambdaplayers_uiscale", UpdateFont, "lambda_teamsystem_updatefonts" )
 
     local nameTrTbl = {}
     local hudTrTbl = { filter = function( ent ) if ent:IsWorld() then return true end end }
+
+    local gamemodeCompetitors = {}
+    local nextScoreUpdateT = 0
 
     local ctfFlagCircle = Material( "lambdaplayers/icon/team_flag_circle.png" )
     local kothFlagCircle = Material( "lambdaplayers/icon/team_flag_square.png" )
@@ -752,6 +1004,44 @@ if ( CLIENT ) then
                 local height = ( ( friendTbl and !table_IsEmpty( friendTbl ) ) and 1.68 or 1.78 )
                 
                 DrawText( "Team: " .. entTeam, "lambdaplayers_displayname", ( scrW / 2 ), ( scrH / height ) + LambdaScreenScale( 1 + uiScale:GetFloat() ), LambdaTeams:GetTeamColor( entTeam, true ), TEXT_ALIGN_CENTER ) 
+            end
+        end
+
+        local gamemodeID = LambdaTeams:GetCurrentGamemodeID()
+        if gamemodeID != 0 then
+            local timeRemain = GetGlobalInt( "LambdaTeamMatch_TimeRemaining", 0 )
+            if timeRemain != -1 then
+                local timeFormatted = FormattedTime( timeRemain, "%02i:%02i" )
+                SimpleTextOutlined( "Match Time: " .. timeFormatted, "lambda_teamsystem_matchtimer", ( scrW / 2 ), ( scrH / 50 ) + LambdaScreenScale( 1 + uiScale:GetFloat() ), color_white, TEXT_ALIGN_CENTER, TEXT_ALIGN_TOP, 1, color_black )
+            end
+
+            local pointsName = "Total Points"
+            if gamemodeID == 2 then
+                pointsName = "Flags Captured"
+            end
+
+            local drawWidth = ( scrW / 45 )
+            local drawHeight = ( ( scrH / 2 ) + LambdaScreenScale( 1 + uiScale:GetFloat() ) )
+            SimpleTextOutlined( pointsName .. ":", "ChatFont", drawWidth, ( drawHeight - 20 ), color_white, TEXT_ALIGN_LEFT, TEXT_ALIGN_TOP, 1, color_black )
+
+            if CurTime() >= nextScoreUpdateT then
+                table_Empty( gamemodeCompetitors )
+                for _, ply in ipairs( table_Add( GetLambdaPlayers(), player_GetAll() ) ) do
+                    local plyTeam = LambdaTeams:GetPlayerTeam( ply )
+                    if !plyTeam or gamemodeCompetitors[ plyTeam ] then continue end
+
+                    gamemodeCompetitors[ plyTeam ] = {
+                        LambdaTeams:GetTeamPoints( plyTeam ),
+                        LambdaTeams:GetTeamColor( plyTeam, true ) 
+                    }
+                end
+                nextScoreUpdateT = ( CurTime() + 0.1 )
+            end
+
+            local scoreIndex = 0
+            for teamName, teamData in pairs( gamemodeCompetitors ) do
+                SimpleTextOutlined( teamName .. ": " .. teamData[ 1 ], "ChatFont", drawWidth, ( drawHeight + ( 20 * scoreIndex ) ), teamData[ 2 ], TEXT_ALIGN_LEFT, TEXT_ALIGN_TOP, 1, color_black )
+                scoreIndex = ( scoreIndex + 1 )
             end
         end
 
@@ -904,14 +1194,13 @@ if ( CLIENT ) then
     local spairs = SortedPairs
     local AddTextChat = chat.AddText
     local DermaMenu = DermaMenu
-    local table_Merge = table.Merge
-    local table_Empty = table.Empty
     local table_insert = table.insert
     local AddNotification = notification.AddLegacy
     local GetAllValidPlayerModels = player_manager.AllValidModels
     local TranslateToPlayerModelName = player_manager.TranslateToPlayerModelName
     local string_len = string.len
     local Round = math.Round
+    local table_Merge = table.Merge
 
     local function OpenLambdaTeamPanel( ply )
         if !ply:IsSuperAdmin() then 

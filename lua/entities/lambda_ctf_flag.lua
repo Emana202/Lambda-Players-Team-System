@@ -114,12 +114,16 @@ if ( SERVER ) then
         local flagName = self:GetFlagName()
         local teamColor = self:GetTeamColor():ToColor()
         if teamName != "Neutral" then
-            LambdaPlayers_ChatAdd( nil, self.FlagHolderColor, self.FlagHolderName, color_glacier, " captured ", teamColor, teamName, "'s ", flagName, color_glacier, " flag!" )
+            LambdaPlayers_ChatAdd( nil, color_white, "[LTS] ", self.FlagHolderColor, self.FlagHolderName, color_glacier, " captured ", teamColor, teamName, "'s ", flagName, color_glacier, " flag!" )
         else
-            LambdaPlayers_ChatAdd( nil, self.FlagHolderColor, self.FlagHolderName, color_glacier, " captured the ", teamColor, flagName, color_glacier, " flag!" )
+            LambdaPlayers_ChatAdd( nil, color_white, "[LTS] ", self.FlagHolderColor, self.FlagHolderName, color_glacier, " captured the ", teamColor, flagName, color_glacier, " flag!" )
         end
 
         local flagHolderTeam = self.FlagHolderTeam
+        if LambdaTeams:GetCurrentGamemodeID() == 2 then
+            LambdaTeams:AddTeamPoints( flagHolderTeam, 1 )
+        end
+
         net.Start( "lambda_teamsystem_playclientsound" )
             net.WriteString( "lambdaplayers_teamsystem_ctf_snd_oncapture_" )
             net.WriteBool( true )
@@ -168,9 +172,9 @@ if ( SERVER ) then
             local retTime = self:GetReturnTime()
             if retTime != 0 and ( retTime - CurTime() ) <= 1 then
                 if teamName != "Neutral" then
-                    LambdaPlayers_ChatAdd( nil, teamColor, teamName, "'s ", flagName, color_glacier, " flag has returned back to its zone!" )
+                    LambdaPlayers_ChatAdd( nil, color_white, "[LTS] ", teamColor, teamName, "'s ", flagName, color_glacier, " flag has returned back to its zone!" )
                 else
-                    LambdaPlayers_ChatAdd( nil, teamColor, flagName, color_glacier, " flag has returned back to its zone!" )
+                    LambdaPlayers_ChatAdd( nil, color_white, "[LTS] ", teamColor, flagName, color_glacier, " flag has returned back to its zone!" )
                 end
 
                 net.Start( "lambda_teamsystem_playclientsound" )
@@ -206,14 +210,18 @@ if ( SERVER ) then
                 end
             else
                 if teamName != "Neutral" then
-                    LambdaPlayers_ChatAdd( nil, teamColor, teamName, "'s ", flagName, color_glacier, " flag has been dropped!" )
+                    LambdaPlayers_ChatAdd( nil, color_white, "[LTS] ", teamColor, teamName, "'s ", flagName, color_glacier, " flag has been dropped!" )
                 else
-                    LambdaPlayers_ChatAdd( nil, teamColor, flagName, color_glacier, " flag has been dropped!")
+                    LambdaPlayers_ChatAdd( nil, color_white, "[LTS] ", teamColor, flagName, color_glacier, " flag has been dropped!")
                 end
                 
                 for _, lambda in ipairs( GetLambdaPlayers() ) do
-                    if lambda:GetIsDead() or lambda.l_TeamName != teamName or random( 1, 100 ) > lambda:GetVoiceChance() / 2 then continue end
-                    lambda:SimpleTimer( Rand( 0.1, 1.0 ), function() lambda:PlaySoundFile( lambda:GetVoiceLine( "assist" ) ) end )
+                    if lambda:GetIsDead() or lambda.l_TeamName != teamName then continue end
+                    lambda:CancelMovement()
+
+                    if random( 1, 100 ) <= lambda:GetVoiceChance() / 2 then
+                        lambda:SimpleTimer( Rand( 0.1, 1.0 ), function() lambda:PlaySoundFile( lambda:GetVoiceLine( "assist" ) ) end )
+                    end
                 end
 
                 net.Start( "lambda_teamsystem_playclientsound" )
@@ -243,9 +251,9 @@ if ( SERVER ) then
                             self.Trail = SpriteTrail( self, 0, teamColor, true, 40, 40, 2, ( 1 / ( 40 - 40 ) * 0.5 ) , "trails/laser" )
 
                             if teamName != "Neutral" then
-                                LambdaPlayers_ChatAdd( nil, self.FlagHolderColor, self.FlagHolderName, color_glacier, " took ", teamColor, teamName, "'s ", flagName, color_glacier, " flag!" )
+                                LambdaPlayers_ChatAdd( nil, color_white, "[LTS] ", self.FlagHolderColor, self.FlagHolderName, color_glacier, " took ", teamColor, teamName, "'s ", flagName, color_glacier, " flag!" )
                             else
-                                LambdaPlayers_ChatAdd( nil, self.FlagHolderColor, self.FlagHolderName, color_glacier, " took the ", teamColor, flagName, color_glacier, " flag!" )
+                                LambdaPlayers_ChatAdd( nil, color_white, "[LTS] ", self.FlagHolderColor, self.FlagHolderName, color_glacier, " took the ", teamColor, flagName, color_glacier, " flag!" )
                             end
 
                             local holderTeam = self.FlagHolderTeam
@@ -257,6 +265,7 @@ if ( SERVER ) then
 
                                 if lambdaTeam == teamName then
                                     voiceLine = "panic"
+                                    lambda:CancelMovement()
                                 elseif lambdaTeam == holderTeam then
                                     voiceLine = "taunt" 
                                 end
