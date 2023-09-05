@@ -286,8 +286,8 @@ local kothIconDrawVisible = CreateLambdaConvar( "lambdaplayers_teamsystem_koth_i
 local kothIconFadeStartDist = CreateLambdaConvar( "lambdaplayers_teamsystem_koth_icon_fadeinstartdist", 2000, true, true, false, "How far you should be from the icon for it to completely fade out of view.", 0, 4096, { name = "Icon Fade In Start", type = "Slider", decimals = 0, category = "Team System - KOTH" } )
 local kothIconFadeEndDist = CreateLambdaConvar( "lambdaplayers_teamsystem_koth_icon_fadeinenddist", 500, true, true, false, "How close you should be from the icon for it to become fully visible.", 0, 4096, { name = "Icon Fade In End", type = "Slider", decimals = 0, category = "Team System - KOTH" } )
 
-CreateLambdaConvar( "lambdaplayers_teamsystem_koth_snd_onpointcapture", "lambdaplayers/ctf/flagcapture.mp3", true, true, false, "The sound that plays when your team has captured a KOTH point.", 0, 1, { name = "Sound - On Point Capture", type = "Text", category = "Team System - KOTH" } )
-CreateLambdaConvar( "lambdaplayers_teamsystem_koth_snd_onpointloss", "lambdaplayers/ctf/ourflagcaptured.mp3", true, true, false, "The sound that plays when your team's KOTH point is lost.", 0, 1, { name = "Sound - On Point Lost", type = "Text", category = "Team System - KOTH" } )
+CreateLambdaConvar( "lambdaplayers_teamsystem_koth_snd_onpointcapture", "", true, true, false, "The sound that plays when your team has captured a KOTH point.", 0, 1, { name = "Sound - On Point Capture", type = "Text", category = "Team System - KOTH" } )
+CreateLambdaConvar( "lambdaplayers_teamsystem_koth_snd_onpointloss", "", true, true, false, "The sound that plays when your team's KOTH point is lost.", 0, 1, { name = "Sound - On Point Lost", type = "Text", category = "Team System - KOTH" } )
 
 --
 
