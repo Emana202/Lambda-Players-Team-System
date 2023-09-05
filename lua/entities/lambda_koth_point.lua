@@ -145,6 +145,9 @@ if ( SERVER ) then
 					            lambda:SimpleTimer( Rand( 0.1, 1.0 ), function() lambda:PlaySoundFile( lambda:GetVoiceLine( "kill" ) ) end )
 					        end
 
+                			LambdaTeams:PlayConVarSound( "lambdaplayers_teamsystem_koth_snd_onpointcapture", entTeam )
+                			LambdaTeams:PlayConVarSound( "lambdaplayers_teamsystem_koth_snd_onpointloss", capName )
+
 			                self:SetIsCaptured( true )
 		                    self:SetCapturePercent( 100 )
 		                    self:SetCapturerName( entTeam )

@@ -124,12 +124,8 @@ if ( SERVER ) then
             LambdaTeams:AddTeamPoints( flagHolderTeam, 1 )
         end
 
-        net.Start( "lambda_teamsystem_playclientsound" )
-            net.WriteString( "lambdaplayers_teamsystem_ctf_snd_oncapture_" )
-            net.WriteBool( true )
-            net.WriteString( self.FlagHolderTeam )
-            net.WriteString( teamName )
-        net.Broadcast()
+        LambdaTeams:PlayConVarSound( "lambdaplayers_teamsystem_ctf_snd_oncapture_ally", flagHolderTeam )
+        LambdaTeams:PlayConVarSound( "lambdaplayers_teamsystem_ctf_snd_oncapture_enemy", teamName )
         
         local flagHolder = self:GetFlagHolderEnt()
         for _, lambda in ipairs( GetLambdaPlayers() ) do
@@ -177,10 +173,7 @@ if ( SERVER ) then
                     LambdaPlayers_ChatAdd( nil, color_white, "[LTS] ", teamColor, flagName, color_glacier, " flag has returned back to its zone!" )
                 end
 
-                net.Start( "lambda_teamsystem_playclientsound" )
-                    net.WriteString( "lambdaplayers_teamsystem_ctf_snd_onreturn" )
-                    net.WriteBool( false )
-                net.Broadcast()
+                LambdaTeams:PlayConVarSound( "lambdaplayers_teamsystem_ctf_snd_onreturn" )
 
                 self:SetReturnTime( 0 )
                 self:ReturnToZone()
@@ -224,10 +217,7 @@ if ( SERVER ) then
                     end
                 end
 
-                net.Start( "lambda_teamsystem_playclientsound" )
-                    net.WriteString( "lambdaplayers_teamsystem_ctf_snd_ondrop" )
-                    net.WriteBool( false )
-                net.Broadcast()
+                LambdaTeams:PlayConVarSound( "lambdaplayers_teamsystem_ctf_snd_ondrop" )
 
                 self:SetFlagHolder( false )
                 if IsValid( self.Trail ) then self.Trail:Remove() end
@@ -274,13 +264,9 @@ if ( SERVER ) then
                                 lambda:SimpleTimer( Rand( 0.1, 1.0 ), function() lambda:PlaySoundFile( lambda:GetVoiceLine( voiceLine ) ) end )
                             end
 
-                            net.Start( "lambda_teamsystem_playclientsound" )
-                                net.WriteString( "lambdaplayers_teamsystem_ctf_snd_onpickup_" )
-                                net.WriteBool( true )
-                                net.WriteString( teamName )
-                                net.WriteString( self.FlagHolderTeam )
-                            net.Broadcast()
-
+                            LambdaTeams:PlayConVarSound( "lambdaplayers_teamsystem_ctf_snd_onpickup_ally", teamName )
+                            LambdaTeams:PlayConVarSound( "lambdaplayers_teamsystem_ctf_snd_onpickup_enemy", holderTeam )
+                            
                             break
                         end
                     end
