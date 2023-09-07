@@ -41,6 +41,7 @@ if ( SERVER ) then
 	    self:SetModelScale( 0.3 )
 	    
 	    self.OldColor = vec_white
+	    self.OldCapturer = "Neutral"
         self:SetPointName( self.CustomName or keynames[ random( #keynames ) ] .. self:GetCreationID() )
 
 		self.IsNonTeamCaptured = false
@@ -116,15 +117,16 @@ if ( SERVER ) then
 						            lambda:SimpleTimer( Rand( 0.1, 1.0 ), function() lambda:PlaySoundFile( lambda:GetVoiceLine( "death" ) ) end )
 						        end
 
+	                			LambdaTeams:PlayConVarSound( "lambdaplayers_teamsystem_koth_snd_onpointneutered" )
+			                    LambdaPlayers_ChatAdd( nil, color_white, "[LTS] ", color_glacier, "[", self:GetCapturerTeamColor( ent ):ToColor(), self:GetPointName(), color_glacier, "]", " was brought to neutral by ", self:GetCapturerColor():ToColor(), ent:Nick() )
+
+								self.OldCapturer = capName
+			                    self:EmitSound( "lambdaplayers/koth/pointneutral.mp3", 70 )
+
 			                    self:SetIsCaptured( false )
 			                    self:SetCapturePercent( 0 )
 			                    self:SetCapturerName( "Neutral" )
 			                    self:SetCapturerColor( vec_white )
-
-			                    self:EmitSound( "lambdaplayers/koth/holdlost.mp3", 100 )
-			                    self:EmitSound( "lambdaplayers/koth/pointneutral.mp3", 65 )
-			                    
-			                    LambdaPlayers_ChatAdd( nil, color_white, "[LTS] ", color_glacier, "[", self.OldColor:ToColor(), self:GetPointName(), color_glacier, "]", " was brought to neutral" )
 			                end
 
 					    	self:SetCapturePercent( Clamp( capPerc - capRate, 0, 100 ) )
@@ -145,8 +147,8 @@ if ( SERVER ) then
 					            lambda:SimpleTimer( Rand( 0.1, 1.0 ), function() lambda:PlaySoundFile( lambda:GetVoiceLine( "kill" ) ) end )
 					        end
 
-                			LambdaTeams:PlayConVarSound( "lambdaplayers_teamsystem_koth_snd_onpointcapture", entTeam )
-                			LambdaTeams:PlayConVarSound( "lambdaplayers_teamsystem_koth_snd_onpointloss", capName )
+						    self:EmitSound( "lambdaplayers/koth/pointcap.mp3", 70 )
+                			LambdaTeams:PlayConVarSound( "lambdaplayers_teamsystem_koth_snd_onpointlost", self.OldCapturer )
 
 			                self:SetIsCaptured( true )
 		                    self:SetCapturePercent( 100 )
@@ -154,12 +156,11 @@ if ( SERVER ) then
 						    self:SetCapturerColor( capTeamClr )
 							self.IsNonTeamCaptured = isNick
 
-						    self:EmitSound( "lambdaplayers/koth/captured.mp3", 100 )
-						    self:EmitSound( "lambdaplayers/koth/pointcap.mp3", 65 )
-
 							if capTeamClr == self.OldColor then
+                				LambdaTeams:PlayConVarSound( "lambdaplayers_teamsystem_koth_snd_onpointrestored", entTeam )
 								LambdaPlayers_ChatAdd( nil, color_white, "[LTS] ", color_glacier, "[", capTeamClr:ToColor(), self:GetPointName(), color_glacier, "]"," was brought back by ", capTeamClr:ToColor(), ent:Nick() )
 						    else
+                				LambdaTeams:PlayConVarSound( "lambdaplayers_teamsystem_koth_snd_onpointcaptured", entTeam )
 								LambdaPlayers_ChatAdd( nil, color_white, "[LTS] ", color_glacier, "[", self.OldColor:ToColor(), self:GetPointName(), color_glacier, "]"," has been captured by ", self:GetCapturerColor():ToColor(), self:GetCapturerName(), ( self:GetCapturerTeamName( ent ) != ent:Nick() and " (" .. ent:Nick() .. ")" or "" ) )
 							end
 
@@ -174,7 +175,7 @@ if ( SERVER ) then
 					LambdaTeams:AddTeamPoints( self:GetCapturerName(), 1 )
 				end
 
-				self.PointIncrementTime = ( CurTime() + 1 )
+				self.PointIncrementTime = ( CurTime() + 4 )
 			end
 		end
 

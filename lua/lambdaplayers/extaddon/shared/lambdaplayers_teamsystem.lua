@@ -126,6 +126,9 @@ local drawHalo          = CreateLambdaConvar( "lambdaplayers_teamsystem_drawhalo
 local gmMatchTime = CreateLambdaConvar( "lambdaplayers_teamsystem_gamemodes_gametime", 5, true, false, false, "The time the gamemode match will take to end in minutes. Set to zero for an endless match.", 0, 30, { name = "Match Time", type = "Slider", decimals = 0, category = "Team System - Gamemodes" } )
 local gmPointsLimit = CreateLambdaConvar( "lambdaplayers_teamsystem_gamemodes_pointslimit", 30, true, false, false, "How many points should the team score in gamemode match in order to win. Set to zero to disable points", 0, 1000, { name = "Points Limit", type = "Slider", decimals = 0, category = "Team System - Gamemodes" } )
 
+CreateLambdaConvar( "lambdaplayers_teamsystem_gamemodes_snd_onwin", "lambdaplayers/gamewon/*", true, true, false, "The sound that plays when your team wins a gamemode match", 0, 1, { name = "Sound - On Game Won", type = "Text", category = "Team System - Gamemodes" } )
+CreateLambdaConvar( "lambdaplayers_teamsystem_gamemodes_snd_onlose", "lambdaplayers/gamelost/*", true, true, false, "The sound that plays when your team loses a gamemode match", 0, 1, { name = "Sound - On Game Lost", type = "Text", category = "Team System - Gamemodes" } )
+
 LambdaTeams.TeamPoints = LambdaTeams.TeamPoints or {}
 
 local gamemodeName, pointsName
@@ -153,6 +156,7 @@ local function GetTheMatchStats( endedPrematurely )
 
     if samePoints != #contesters then
         LambdaPlayers_ChatAdd( nil, color_white, "[LTS] ", winnerClr, winnerTeam, color_glacier, " won the match of ", color_white, gamemodeName, color_glacier, " with total of ", color_white, tostring( curPoints ), color_glacier, " ", pointsName, ( curPoints > 1 and "s" or "" ), "!" )
+        LambdaTeams:PlayConVarSound( "lambdaplayers_teamsystem_gamemodes_snd_onwin", winnerTeam )
 
         for _, contestData in ipairs( contesters ) do
             local contestTeam = contestData[ 1 ]
@@ -164,9 +168,12 @@ local function GetTheMatchStats( endedPrematurely )
             else
                 LambdaPlayers_ChatAdd( nil, color_white, "[LTS] ", contestData[ 3 ], contestTeam, color_glacier, " ended with total of ", color_white, tostring( contestPoints ), color_glacier, " ", pointsName, ( contestPoints > 1 and "s" or "" ) )
             end
+
+            LambdaTeams:PlayConVarSound( "lambdaplayers_teamsystem_gamemodes_snd_onlose", contestTeam )
         end
     elseif !endedPrematurely then
         LambdaPlayers_ChatAdd( nil, color_white, "[LTS] ", color_glacier, "Stalemate! Each team got the same amount of ", pointsName, ( curPoints > 1 and "s" or "" ), "!" )
+        LambdaTeams:PlayConVarSound( "lambdaplayers_teamsystem_gamemodes_snd_onlose" )
     end
 end
 
@@ -179,13 +186,15 @@ local function GameMatchThinkTimer()
     if !teamsEnabled:GetBool() then StopGameMatch() return end
 
     local pointLimit = GetGlobalInt( "LambdaTeamMatch_PointLimit" )
-    for teamName, globalName in pairs( LambdaTeams.TeamPoints ) do
-        local teamPoints = GetGlobalInt( globalName, 0 )
-        if teamPoints < pointLimit then continue end
+    if pointLimit != 0 then
+        for teamName, globalName in pairs( LambdaTeams.TeamPoints ) do
+            local teamPoints = GetGlobalInt( globalName, 0 )
+            if teamPoints < pointLimit then continue end
 
-        GetTheMatchStats()
-        StopGameMatch()
-        return
+            GetTheMatchStats()
+            StopGameMatch()
+            return
+        end
     end
 
     local timeRemain = GetGlobalInt( "LambdaTeamMatch_TimeRemaining", 0 )
@@ -286,8 +295,10 @@ local kothIconDrawVisible = CreateLambdaConvar( "lambdaplayers_teamsystem_koth_i
 local kothIconFadeStartDist = CreateLambdaConvar( "lambdaplayers_teamsystem_koth_icon_fadeinstartdist", 2000, true, true, false, "How far you should be from the icon for it to completely fade out of view.", 0, 4096, { name = "Icon Fade In Start", type = "Slider", decimals = 0, category = "Team System - KOTH" } )
 local kothIconFadeEndDist = CreateLambdaConvar( "lambdaplayers_teamsystem_koth_icon_fadeinenddist", 500, true, true, false, "How close you should be from the icon for it to become fully visible.", 0, 4096, { name = "Icon Fade In End", type = "Slider", decimals = 0, category = "Team System - KOTH" } )
 
-CreateLambdaConvar( "lambdaplayers_teamsystem_koth_snd_onpointcapture", "", true, true, false, "The sound that plays when your team has captured a KOTH point.", 0, 1, { name = "Sound - On Point Capture", type = "Text", category = "Team System - KOTH" } )
-CreateLambdaConvar( "lambdaplayers_teamsystem_koth_snd_onpointloss", "", true, true, false, "The sound that plays when your team's KOTH point is lost.", 0, 1, { name = "Sound - On Point Lost", type = "Text", category = "Team System - KOTH" } )
+CreateLambdaConvar( "lambdaplayers_teamsystem_koth_snd_onpointcaptured", "lambdaplayers/koth/captured.mp3", true, true, false, "The sound that plays when your team has successfully captured a KOTH point.", 0, 1, { name = "Sound - On Point Capture", type = "Text", category = "Team System - KOTH" } )
+CreateLambdaConvar( "lambdaplayers_teamsystem_koth_snd_onpointneutered", "lambdaplayers/koth/holdlost.mp3", true, true, false, "The sound that plays when a KOTH point has become neutral.", 0, 1, { name = "Sound - On Point Neutral", type = "Text", category = "Team System - KOTH" } )
+CreateLambdaConvar( "lambdaplayers_teamsystem_koth_snd_onpointrestored", "lambdaplayers/koth/holdrestored.mp3", true, true, false, "The sound that plays when your team's KOTH point is reclaimed back from neutral.", 0, 1, { name = "Sound - On Point Reclaim", type = "Text", category = "Team System - KOTH" } )
+CreateLambdaConvar( "lambdaplayers_teamsystem_koth_snd_onpointlost", "lambdaplayers/koth/loss.mp3", true, true, false, "The sound that plays when your team's KOTH point is lost.", 0, 1, { name = "Sound - On Point Lost", type = "Text", category = "Team System - KOTH" } )
 
 --
 
