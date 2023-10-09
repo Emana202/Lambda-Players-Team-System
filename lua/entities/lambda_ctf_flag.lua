@@ -27,7 +27,7 @@ if ( SERVER ) then
     local net = net
     local SpriteTrail = util.SpriteTrail
     local TraceLine = util.TraceLine
-    local downtracetbl = {}
+    local traceTbl = { filter = {} }
     local keynames = { "A", "B", "C", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z" }
     local color_glacier = Color( 130, 164, 192 )
     local timer_Simple = timer.Simple
@@ -181,10 +181,19 @@ if ( SERVER ) then
         else
             self:SetReturnTime( CurTime() + returnTime:GetFloat() + 1.0 )
         end
+        
+        traceTbl.start = self:WorldSpaceCenter()
+        traceTbl.filter[ 1 ] = self
+        traceTbl.filter[ 2 ] = self.CaptureZone
 
         for _, ent in ipairs( FindInSphere( self.CaptureZone:GetPos(), 100 ) ) do
             if ent != self and IsValid( ent ) and ent.IsLambdaFlag and ent:GetIsPickedUp() and ent:GetTeamName() != teamName and LambdaTeams:GetPlayerTeam( ent:GetFlagHolderEnt() ) == teamName then
-                ent:OnCaptured()
+                traceTbl.endpos = ent:WorldSpaceCenter()
+
+                local visTr = TraceLine( traceTbl )
+                if visTr.Entity == ent or !visTr.Hit then
+                    ent:OnCaptured()
+                end
             end
         end
 
@@ -222,10 +231,8 @@ if ( SERVER ) then
                 self:SetFlagHolder( false )
                 if IsValid( self.Trail ) then self.Trail:Remove() end
 
-                downtracetbl.start = self:GetPos()
-                downtracetbl.endpos = ( self:GetPos() - vector_up * 32756 )
-                downtracetbl.filter = self
-                local downtrace = TraceLine( downtracetbl )
+                traceTbl.endpos = ( self:GetPos() - vector_up * 32756 )
+                local downtrace = TraceLine( traceTbl )
                 self:SetPos( downtrace.HitPos - downtrace.HitNormal * self:OBBMins().z )
             end
         else
@@ -237,37 +244,42 @@ if ( SERVER ) then
                     if ent != self and IsValid( ent ) and !ent.l_HasFlag and ( ent.IsLambdaPlayer or ent:IsPlayer() and !ignorePlys:GetBool() ) and ent:Alive() then
                         local entTeam = LambdaTeams:GetPlayerTeam( ent )
                         if entTeam and entTeam != teamName then
-                            self:SetFlagHolder( ent )
-                            self.Trail = SpriteTrail( self, 0, teamColor, true, 40, 40, 2, ( 1 / ( 40 - 40 ) * 0.5 ) , "trails/laser" )
+                            traceTbl.endpos = ent:WorldSpaceCenter()
 
-                            if teamName != "Neutral" then
-                                LambdaPlayers_ChatAdd( nil, color_white, "[LTS] ", self.FlagHolderColor, self.FlagHolderName, color_glacier, " took ", teamColor, teamName, "'s ", flagName, color_glacier, " flag!" )
-                            else
-                                LambdaPlayers_ChatAdd( nil, color_white, "[LTS] ", self.FlagHolderColor, self.FlagHolderName, color_glacier, " took the ", teamColor, flagName, color_glacier, " flag!" )
-                            end
+                            local visTr = TraceLine( traceTbl )
+                            if visTr.Entity == ent or !visTr.Hit then
+                                self:SetFlagHolder( ent )
+                                self.Trail = SpriteTrail( self, 0, teamColor, true, 40, 40, 2, ( 1 / ( 40 - 40 ) * 0.5 ) , "trails/laser" )
 
-                            local holderTeam = self.FlagHolderTeam
-                            for _, lambda in ipairs( GetLambdaPlayers() ) do
-                                if lambda:GetIsDead() or ent != lambda and random( 1, 100 ) > lambda:GetVoiceChance() / 3 then continue end
-
-                                local voiceLine = nil
-                                local lambdaTeam = lambda.l_TeamName
-
-                                if lambdaTeam == teamName then
-                                    voiceLine = "panic"
-                                    lambda:CancelMovement()
-                                elseif lambdaTeam == holderTeam then
-                                    voiceLine = "taunt" 
+                                if teamName != "Neutral" then
+                                    LambdaPlayers_ChatAdd( nil, color_white, "[LTS] ", self.FlagHolderColor, self.FlagHolderName, color_glacier, " took ", teamColor, teamName, "'s ", flagName, color_glacier, " flag!" )
+                                else
+                                    LambdaPlayers_ChatAdd( nil, color_white, "[LTS] ", self.FlagHolderColor, self.FlagHolderName, color_glacier, " took the ", teamColor, flagName, color_glacier, " flag!" )
                                 end
 
-                                if !voiceLine then continue end
-                                lambda:SimpleTimer( Rand( 0.1, 1.0 ), function() lambda:PlaySoundFile( lambda:GetVoiceLine( voiceLine ) ) end )
-                            end
+                                local holderTeam = self.FlagHolderTeam
+                                for _, lambda in ipairs( GetLambdaPlayers() ) do
+                                    if lambda:GetIsDead() or ent != lambda and random( 1, 100 ) > lambda:GetVoiceChance() / 3 then continue end
 
-                            LambdaTeams:PlayConVarSound( "lambdaplayers_teamsystem_ctf_snd_onpickup_ally", teamName )
-                            LambdaTeams:PlayConVarSound( "lambdaplayers_teamsystem_ctf_snd_onpickup_enemy", holderTeam )
-                            
-                            break
+                                    local voiceLine = nil
+                                    local lambdaTeam = lambda.l_TeamName
+
+                                    if lambdaTeam == teamName then
+                                        voiceLine = "panic"
+                                        lambda:CancelMovement()
+                                    elseif lambdaTeam == holderTeam then
+                                        voiceLine = "taunt" 
+                                    end
+
+                                    if !voiceLine then continue end
+                                    lambda:SimpleTimer( Rand( 0.1, 1.0 ), function() lambda:PlaySoundFile( lambda:GetVoiceLine( voiceLine ) ) end )
+                                end
+
+                                LambdaTeams:PlayConVarSound( "lambdaplayers_teamsystem_ctf_snd_onpickup_ally", teamName )
+                                LambdaTeams:PlayConVarSound( "lambdaplayers_teamsystem_ctf_snd_onpickup_enemy", holderTeam )
+                                
+                                break
+                            end
                         end
                     end
                 end
