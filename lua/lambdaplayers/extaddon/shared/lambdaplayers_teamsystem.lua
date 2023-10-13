@@ -1209,7 +1209,6 @@ if ( CLIENT ) then
     
     local CreateVGUI = vgui.Create
     local spairs = SortedPairs
-    local AddTextChat = chat.AddText
     local DermaMenu = DermaMenu
     local table_insert = table.insert
     local AddNotification = notification.AddLegacy
@@ -1271,7 +1270,7 @@ if ( CLIENT ) then
             local info = line:GetSortValue( 1 )
 
             conmenu:AddOption( "Delete " .. info.name .. "?", function()
-                AddTextChat( "Deleted " .. info.name .. " from the team list.")
+                chat.AddText( "Deleted " .. info.name .. " from the team list.")
                 PlayClientSound( "buttons/button15.wav" )
                 teamlist:RemoveLine( id )
                 
@@ -1300,7 +1299,7 @@ if ( CLIENT ) then
                 end
             end
 
-            AddTextChat( "Team Validation complete." .. ( hasissue and " Some issues were found. Check console for more details." or " No issues were found." ) )
+            chat.AddText( "Team Validation complete." .. ( hasissue and " Some issues were found. Check console for more details." or " No issues were found." ) )
         end )
 
         LAMBDAPANELS:CreateButton( rightpanel, BOTTOM, "Save Team", function()
@@ -1312,14 +1311,14 @@ if ( CLIENT ) then
                 local info = line:GetSortValue( 1 )
                 if info.name == compiledinfo.name then 
                     line:SetSortValue( 1, compiledinfo ) 
-                    AddTextChat( "Edited team " .. compiledinfo.name .. "'s data." )
+                    chat.AddText( "Edited team " .. compiledinfo.name .. "'s data." )
                     alreadyexists = true; break 
                 end
             end
             if !alreadyexists then
                 local line = teamlist:AddLine( compiledinfo.name )
                 line:SetSortValue( 1, compiledinfo )
-                AddTextChat( "Saved " .. compiledinfo.name .. " to the team list." )
+                chat.AddText( "Saved " .. compiledinfo.name .. " to the team list." )
             end
 
             PlayClientSound( "buttons/button15.wav" )
