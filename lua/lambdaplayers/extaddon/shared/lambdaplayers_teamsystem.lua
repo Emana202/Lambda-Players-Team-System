@@ -18,6 +18,7 @@ local ents_FindByClass = ents.FindByClass
 local player_GetAll = player.GetAll
 local table_Add = table.Add
 local table_Copy = table.Copy
+local table_remove = table.remove
 local timer_Simple = timer.Simple
 local timer_Create = timer.Create
 local timer_Remove = timer.Remove
@@ -28,6 +29,7 @@ local defaultPlyClr = Color( 255, 255, 100 )
 local color_glacier = Color( 130, 164, 192 )
 
 local ignorePlys = GetConVar( "ai_ignoreplayers" )
+local rasp = GetConVar( "lambdaplayers_lambda_respawnatplayerspawns" )
 
 if SERVER and !file_Exists( "lambdaplayers/teamlist.json", "DATA" ) then
     LAMBDAFS:WriteFile( "lambdaplayers/teamlist.json", {
@@ -125,11 +127,18 @@ local drawHalo          = CreateLambdaConvar( "lambdaplayers_teamsystem_drawhalo
 
 local gmMatchTime = CreateLambdaConvar( "lambdaplayers_teamsystem_gamemodes_gametime", 5, true, false, false, "The time the gamemode match will take to end in minutes. Set to zero for an endless match.", 0, 30, { name = "Match Time", type = "Slider", decimals = 0, category = "Team System - Gamemodes" } )
 local gmPointsLimit = CreateLambdaConvar( "lambdaplayers_teamsystem_gamemodes_pointslimit", 30, true, false, false, "How many points should the team score in gamemode match in order to win. Set to zero to disable points", 0, 1000, { name = "Points Limit", type = "Slider", decimals = 0, category = "Team System - Gamemodes" } )
+local gmTPToSpawns = CreateLambdaConvar( "lambdaplayers_teamsystem_gamemodes_tptospawns", 1, true, false, false, "If team players should be teleported to their spawn positions on gamemode start", 0, 1, { name = "Teleport To Spawn On Start", type = "Bool", category = "Team System - Gamemodes" } )
+
+--
 
 CreateLambdaConvar( "lambdaplayers_teamsystem_gamemodes_snd_onwin", "lambdaplayers/gamewon/*", true, true, false, "The sound that plays when your team wins a gamemode match", 0, 1, { name = "Sound - On Game Won", type = "Text", category = "Team System - Gamemodes" } )
 CreateLambdaConvar( "lambdaplayers_teamsystem_gamemodes_snd_onlose", "lambdaplayers/gamelost/*", true, true, false, "The sound that plays when your team loses a gamemode match", 0, 1, { name = "Sound - On Game Lost", type = "Text", category = "Team System - Gamemodes" } )
+CreateLambdaConvar( "lambdaplayers_teamsystem_gamemodes_snd_gamestart", "lambdaplayers/gamestart/*", true, true, false, "The sound that plays when a gamemode starts.", 0, 1, { name = "Sound - On Match Begin", type = "Text", category = "Team System - Gamemodes" } )
+CreateLambdaConvar( "lambdaplayers_teamsystem_gamemodes_snd_match30left", "lambdaplayers/matchtimeleft/30seconds.mp3", true, true, false, "The sound that plays when there's 30 seconds left before match's end.", 0, 1, { name = "Sound - 30 Second Left", type = "Text", category = "Team System - Gamemodes" } )
+CreateLambdaConvar( "lambdaplayers_teamsystem_gamemodes_snd_match10left", "lambdaplayers/matchtimeleft/10seconds.mp3", true, true, false, "The sound that plays when there's 10 seconds left before match's end.", 0, 1, { name = "Sound - 10 Second Left", type = "Text", category = "Team System - Gamemodes" } )
 
 LambdaTeams.TeamPoints = LambdaTeams.TeamPoints or {}
+LambdaTeams.SoundsToStop = LambdaTeams.SoundsToStop or {}
 
 local gamemodeName, pointsName
 local nextTimerProgressT = ( CurTime() + 1 )
@@ -180,6 +189,24 @@ end
 local function StopGameMatch()
     SetGlobalInt( "LambdaTeamMatch_GameID", 0 )
     timer_Remove( "LambdaTeamMatch_ThinkTimer" )
+
+    LambdaTeams:StopConVarSound( "lambdaplayers_teamsystem_gamemodes_snd_gamestart" )
+    LambdaTeams:StopConVarSound( "lambdaplayers_teamsystem_gamemodes_snd_match30left" )
+    LambdaTeams:StopConVarSound( "lambdaplayers_teamsystem_gamemodes_snd_match10left" )
+
+    local stopSnds = LambdaTeams.SoundsToStop
+    if stopSnds then
+        for _, sndCvar in ipairs( stopSnds ) do
+            net.Start( "lambda_teamsystem_stopclientsound" )
+                net.WriteString( sndCvar )
+            net.Broadcast()
+        end
+    end
+
+    for _, kp in ipairs( ents_FindByClass( "lambda_koth_point" ) ) do
+        if !kp:GetIsCaptured() then continue end
+        kp:BecomeNeutral()
+    end
 end
 
 local function GameMatchThinkTimer()
@@ -205,13 +232,21 @@ local function GameMatchThinkTimer()
             StopGameMatch()
             return
         end
-
         nextTimerProgressT = ( CurTime() + 1 )
-        SetGlobalInt( "LambdaTeamMatch_TimeRemaining", ( timeRemain - 1 ) )
+
+        timeRemain = ( timeRemain - 1 )
+        SetGlobalInt( "LambdaTeamMatch_TimeRemaining", timeRemain )
+
+        if timeRemain == 30 then
+            LambdaTeams:PlayConVarSound( "lambdaplayers_teamsystem_gamemodes_snd_match30left", "all" )
+        elseif timeRemain == 10 then
+            LambdaTeams:StopConVarSound( "lambdaplayers_teamsystem_gamemodes_snd_match30left" )
+            LambdaTeams:PlayConVarSound( "lambdaplayers_teamsystem_gamemodes_snd_match10left", "all" )
+        end
     end
 end
 
-local function StartGamemode( ply, gameIndex, time, pointLimit )
+local function StartGamemode( ply, gameIndex, stopSnds )
     if !ply:IsSuperAdmin() then
         LambdaPlayers_Notify( ply, "You must be a Super Admin in order to start a match!", 1, "buttons/button10.wav" )
         return
@@ -238,6 +273,7 @@ local function StartGamemode( ply, gameIndex, time, pointLimit )
         return
     end
 
+    LambdaTeams.SoundsToStop = stopSnds
     SetGlobalInt( "LambdaTeamMatch_GameID", gameIndex )
     SetGlobalInt( "LambdaTeamMatch_PointLimit", gmPointsLimit:GetInt() )
 
@@ -245,9 +281,18 @@ local function StartGamemode( ply, gameIndex, time, pointLimit )
         SetGlobalInt( globalName, 0 )
         LambdaTeams.TeamPoints[ teamName ] = nil
     end
+
+    local curTeams = {}
     for _, ply in ipairs( table_Add( GetLambdaPlayers(), player_GetAll() ) ) do
         local plyTeam = LambdaTeams:GetPlayerTeam( ply )
-        if plyTeam then LambdaTeams.TeamPoints[ plyTeam ] = "LambdaTeamMatch_TeamPoints_" .. plyTeam end
+        if !plyTeam then continue end
+
+        if !LambdaTeams.TeamPoints[ plyTeam ] then
+            LambdaTeams.TeamPoints[ plyTeam ] = "LambdaTeamMatch_TeamPoints_" .. plyTeam 
+            curTeams[ plyTeam ] = {}
+        end
+
+        curTeams[ plyTeam ][ #curTeams[ plyTeam ] + 1 ] = ply
     end
 
     pointsName = "point"
@@ -258,6 +303,7 @@ local function StartGamemode( ply, gameIndex, time, pointLimit )
         pointsName = "flag capture"
     elseif gameIndex == 3 then
         gamemodeName = "Team Deathmatch"
+        pointsName = "kill"
     end
 
     local timeLimit = gmMatchTime:GetInt()
@@ -266,6 +312,54 @@ local function StartGamemode( ply, gameIndex, time, pointLimit )
         SetGlobalInt( "LambdaTeamMatch_TimeRemaining", ( timeLimit * 60 ) )
     else
         SetGlobalInt( "LambdaTeamMatch_TimeRemaining", -1 )
+    end
+
+    LambdaTeams:PlayConVarSound( "lambdaplayers_teamsystem_gamemodes_snd_gamestart", "all" )
+    if gmTPToSpawns:GetBool() then
+        for team, plys in pairs( curTeams ) do
+            local spawnPoints = ( useSpawnpoints:GetBool() and LambdaTeams:GetSpawnPoints( team ) )
+
+            for _, ply in ipairs( plys ) do
+                if !ply:Alive() then continue end
+
+                local spawnPos, spawnAng = ply.l_SpawnPos, ply.l_SpawnAngles
+                if spawnPoints and #spawnPoints > 0 then
+                    local rndSpawn = spawnPoints[ random( #spawnPoints ) ]
+                    for index, point in RandomPairs( spawnPoints ) do 
+                        table_remove( spawnPoints, index )
+                        
+                        if !point.IsOccupied then 
+                            rndSpawn = point
+                            break
+                        end
+                    end
+
+                    spawnPos = rndSpawn:GetPos()
+                    spawnAng = rndSpawn:GetAngles()
+                elseif rasp:GetBool() then
+                    LambdaSpawnPoints = ( LambdaSpawnPoints or LambdaGetPossibleSpawns() )
+                    if LambdaSpawnPoints and #LambdaSpawnPoints > 0 then 
+                        local rndPoint = LambdaSpawnPoints[ random( #LambdaSpawnPoints ) ]
+                        spawnPos = rndPoint:GetPos()
+                        spawnAng = rndPoint:GetAngles()
+                    end
+                end
+
+                ply:SetState( "Idle" )
+                ply:SetEnemy( nil )
+                ply:ResetAI()
+                ply:CancelMovement() 
+
+                ply:SetPos( spawnPos )
+                ply:SetAngles( spawnAng )
+                ply.loco:SetVelocity( vector_origin )
+            end
+        end
+    end
+
+    for _, kp in ipairs( ents_FindByClass( "lambda_koth_point" ) ) do
+        if !kp:GetIsCaptured() then continue end
+        kp:BecomeNeutral()
     end
 
     timer_Create( "LambdaTeamMatch_ThinkTimer", 0.1, 0, GameMatchThinkTimer )
@@ -282,12 +376,13 @@ CreateLambdaConsoleCommand( "lambdaplayers_teamsystem_ctf_startmatch", function(
 end, false, "Start the match of the Capture The Flag gamemode", { name = "Start CTF Match", category = "Team System - Gamemodes" } )
 
 CreateLambdaConsoleCommand( "lambdaplayers_teamsystem_tdm_startmatch", function( ply )
-    StartGamemode( ply, 3 )
+    StartGamemode( ply, 3, { "lambdaplayers_teamsystem_tdm_snd_10killsleft" } )
 end, false, "Start the match of the Team Deathmatch gamemode", { name = "Start TDM Match", category = "Team System - Gamemodes" } )
 
 --
 
 CreateLambdaConvar( "lambdaplayers_teamsystem_koth_capturerate", 0.2, true, false, false, "The speed rate of capturing the KOTH Points.", 0.01, 5.0, { name = "Capture Rate", type = "Slider", decimals = 2, category = "Team System - KOTH" } )
+CreateLambdaConvar( "lambdaplayers_teamsystem_koth_scoregaintime", 5, true, false, false, "How much time should pass before the KOTH Point gives point to its team.", 0.1, 60, { name = "Score Gain Time", type = "Slider", decimals = 1, category = "Team System - KOTH" } )
 local kothCapRange = CreateLambdaConvar( "lambdaplayers_teamsystem_koth_capturerange", 500, true, false, false, "How close player should be to start capturing the point.", 100, 1000, { name = "Capture Range", type = "Slider", decimals = 0, category = "Team System - KOTH" } )
 
 local kothIconEnabled = CreateLambdaConvar( "lambdaplayers_teamsystem_koth_icon_enabled", 1, true, true, false, "If your team's captured KOTH point should have a icon drawn on them.", 0, 1, { name = "Enable Icons", type = "Bool", category = "Team System - KOTH" } )
@@ -318,6 +413,10 @@ CreateLambdaConvar( "lambdaplayers_teamsystem_ctf_snd_onreturn", "lambdaplayers/
 
 ---
 
+CreateLambdaConvar( "lambdaplayers_teamsystem_tdm_snd_10killsleft", "lambdaplayers/tdm/10killsleft.mp3", true, true, false, "The sound that plays when there are only 10 kills left to win.", 0, 1, { name = "Sound - 10 Kills Left", type = "Text", category = "Team System - TDM" } )
+
+---
+
 function LambdaTeams:GetCurrentGamemodeID()
     return GetGlobalInt( "LambdaTeamMatch_GameID", 0 )
 end
@@ -340,7 +439,14 @@ function LambdaTeams:AddTeamPoints( teamName, count )
         teamPoints = "LambdaTeamMatch_TeamPoints_" .. teamName
         LambdaTeams.TeamPoints[ teamName ] = teamPoints
     end
-    SetGlobalInt( teamPoints, ( GetGlobalInt( teamPoints, 0 ) + count ) )
+
+    local newCount = ( GetGlobalInt( teamPoints, 0 ) + count )
+    if LambdaTeams:GetCurrentGamemodeID() == 3 and ( GetGlobalInt( "LambdaTeamMatch_PointLimit" ) - newCount ) == 10 then
+        LambdaPlayers_ChatAdd( nil, color_white, "[LTS] ", LambdaTeams:GetTeamColor( teamName, true ), teamName, color_glacier, " needs 10 more kills to win!" )
+        LambdaTeams:PlayConVarSound( "lambdaplayers_teamsystem_tdm_snd_10killsleft", "all" )
+    end
+
+    SetGlobalInt( teamPoints, newCount )
 end
 
 function LambdaTeams:GetTeamColor( teamName, realColor )
@@ -414,6 +520,7 @@ end
 if ( SERVER ) then
 
     util.AddNetworkString( "lambda_teamsystem_playclientsound" )
+    util.AddNetworkString( "lambda_teamsystem_stopclientsound" )
     util.AddNetworkString( "lambda_teamsystem_setplayerteam" )
     util.AddNetworkString( "lambda_teamsystem_updatedata" )
     util.AddNetworkString( "lambda_teamsystem_sendupdateddata" )
@@ -452,6 +559,12 @@ if ( SERVER ) then
     function LambdaTeams:PlayConVarSound( sndCvar, targetTeam )
         net.Start( "lambda_teamsystem_playclientsound" )
             net.WriteString( targetTeam or "" )
+            net.WriteString( sndCvar )
+        net.Broadcast()
+    end
+
+    function LambdaTeams:StopConVarSound( sndCvar )
+        net.Start( "lambda_teamsystem_stopclientsound" )
             net.WriteString( sndCvar )
         net.Broadcast()
     end
@@ -500,7 +613,7 @@ if ( SERVER ) then
         if team == "random" then
             if rndNoTeams then
                 local teamCount = table_Count( teamTbl )
-                if random( 1, teamCount + 1 ) > teamCount then return end
+                if random( teamCount + 1 ) > teamCount then return end
             end
 
             teamData = table_Random( teamTbl )
@@ -659,8 +772,8 @@ if ( SERVER ) then
     local function LambdaOnThink( self, wepent, isdead )
         if isdead or !teamsEnabled:GetBool() then return end
 
-        if CurTime() > self.l_NextEnemyTeamSearchT then
-            self.l_NextEnemyTeamSearchT = CurTime() + Rand( 0.33, 1.0 )
+        if CurTime() >= self.l_NextEnemyTeamSearchT then
+            self.l_NextEnemyTeamSearchT = CurTime() + Rand( 0.1, 0.5 )
 
             local kothEnt = self.l_KOTH_Entity
             if self.l_TeamName and LambdaTeams:AreTeamsHostile() or IsValid( kothEnt ) then
@@ -728,7 +841,7 @@ if ( SERVER ) then
         if state != "Idle" and state != "FindTarget" then return end
 
         local kothEnt = self.l_KOTH_Entity
-        if !IsValid( kothEnt ) or kothEnt:GetIsCaptured() and random( 1, ( kothEnt:GetCapturerName() == kothEnt:GetCapturerTeamName( self ) and 2 or 8 ) ) == 1 then
+        if !IsValid( kothEnt ) or kothEnt:GetIsCaptured() and random( kothEnt:GetCapturerName() == kothEnt:GetCapturerTeamName( self ) and 2 or 8 ) == 1 then
             local kothEnts = ents_FindByClass( "lambda_koth_point" )
             if #kothEnts > 0 then kothEnt = kothEnts[ random( #kothEnts ) ] end
         end
@@ -746,7 +859,7 @@ if ( SERVER ) then
             end
 
             self:RecomputePath( movePos )
-            self:SetRun( random( 1, 3 ) != 1 and ( !self:IsInRange( movePos, capRange ) or !self:CanSee( kothEnt ) ) )
+            self:SetRun( random( 3 ) != 1 and ( !self:IsInRange( movePos, capRange ) or !self:CanSee( kothEnt ) ) )
 
             self.l_KOTH_Entity = kothEnt
             return
@@ -755,7 +868,7 @@ if ( SERVER ) then
         local teamName = self.l_TeamName
         if teamName then
             local ctfFlag, hasFlag = self.l_CTF_Flag, self.l_HasFlag
-            if !IsValid( ctfFlag ) or hasFlag and ctfFlag:GetTeamName() != teamName or random( 1, 3 ) == 1 then
+            if !IsValid( ctfFlag ) or hasFlag and ctfFlag:GetTeamName() != teamName or random( 3 ) == 1 then
                 for _, flag in RandomPairs( ents_FindByClass( "lambda_ctf_flag" ) ) do
                     if flag == ctfFlag or !IsValid( flag ) then continue end
 
@@ -792,27 +905,33 @@ if ( SERVER ) then
                 return
             end
 
-            if random( 1, 3 ) == 1 then
+            if random( 3 ) == 1 then
                 local combatChance = ( self:GetCombatChance() * min( self:Health() / self:GetMaxHealth(), 1.0 ) )
-                if random( 1, 100 ) <= combatChance then
+                if random( 100 ) <= combatChance then
                     if huntDown:GetBool() and LambdaTeams:AreTeamsHostile() then
                         for _, ent in RandomPairs( ents_GetAll() ) do
-                            if ent != self and LambdaTeams:AreTeammates( self, ent ) == false and self:CanTarget( ent ) then
-                                local rndPos = ( self:GetRandomPosition( ent:GetPos(), random( 300, 550 ) ) )
-                                self:SetRun( random( 1, 3 ) == 1 )
-                                self:RecomputePath( rndPos )
-                                return
-                            end
+                            if ent == self or LambdaTeams:AreTeammates( self, ent ) or !self:CanTarget( ent ) then continue end
+                            local rndPos = ( self:GetRandomPosition( ent:GetPos(), random( 300, 550 ) ) )
+                            self:SetRun( random( 3 ) == 1 )
+                            self:RecomputePath( rndPos ); return
                         end
                     end
                 elseif stickTogether:GetBool() then
                     for _, ent in RandomPairs( ents_GetAll() ) do
-                        if ent != self and LambdaTeams:AreTeammates( self, ent ) and ent:Alive() and ( !ent:IsPlayer() or !ignorePlys:GetBool() ) then
-                            local movePos = self:GetRandomPosition( ent:GetPos(), random( 150, 350 ) )
-                            self:SetRun( random( 1, 4 ) == 1 or !self:IsInRange( movePos, 1500 ) )
-                            self:RecomputePath( movePos )
-                            return 
+                        if ent == self or !LambdaTeams:AreTeammates( self, ent ) or !ent:Alive() or ent:IsPlayer() and ignorePlys:GetBool() then continue end
+
+                        local movePos 
+                        local path = self.l_CurrentPath
+                        if !self:IsInRange( ent, 750 ) and IsValid( path ) then
+                            movePos = ent
+                            self.l_moveoptions.update = 0.2
+                            path:SetGoalTolerance( 50 )
+                        else
+                            movePos = self:GetRandomPosition( ent:GetPos(), random( 150, 350 ) )
                         end
+
+                        self:SetRun( random( 4 ) == 1 or !self:IsInRange( movePos, 1500 ) )                            
+                        self:RecomputePath( movePos ); return
                     end
                 end
             end
@@ -949,12 +1068,12 @@ if ( CLIENT ) then
     local ctfFlagCircle = Material( "lambdaplayers/icon/team_flag_circle.png" )
     local kothFlagCircle = Material( "lambdaplayers/icon/team_flag_square.png" )
 
+    local clientSnds = {}
+
     net.Receive( "lambda_teamsystem_playclientsound", function()
         local plyTeam = playerTeam:GetString()
-        if plyTeam == "" then return end
-
         local targetTeam = net.ReadString()
-        if targetTeam != "" and plyTeam != targetTeam then return end
+        if targetTeam != "" and targetTeam != "all" and plyTeam != targetTeam then return end
 
         local cvarName = net.ReadString()
         if !cvarName or cvarName == "" then return end
@@ -970,7 +1089,28 @@ if ( CLIENT ) then
             sndPath = string_Replace( sndPath .. dirFiles[ random( #dirFiles ) ], "*", "" )
         end
 
-        PlayClientSound( sndPath )
+        local snd = CreateSound( Entity( 0 ), sndPath )
+        snd:SetSoundLevel( 0 )
+        snd:Play()
+
+        local sndList = clientSnds[ cvarName ]
+        if !sndList then
+            sndList = {}
+            clientSnds[ cvarName ] = sndList
+        end
+        sndList[ #sndList + 1 ] = snd
+    end )
+
+    net.Receive( "lambda_teamsystem_stopclientsound", function()
+        local cvarName = net.ReadString()
+        if !cvarName or cvarName == "" then return end
+
+        local sndList = clientSnds[ cvarName ]
+        if !sndList or #sndList == 0 then return end
+
+        for _, snd in ipairs( sndList ) do
+            snd:Stop()
+        end
     end )
 
     local function OnPlayerLambdaTeamChanged( name, oldVal, newVal )
@@ -1035,6 +1175,8 @@ if ( CLIENT ) then
             local pointsName = "Total Points"
             if gamemodeID == 2 then
                 pointsName = "Flags Captured"
+            elseif gamemodeID == 3 then
+                pointsName = "Total Kills"
             end
 
             local drawWidth = ( scrW / 45 )

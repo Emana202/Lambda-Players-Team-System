@@ -35,6 +35,7 @@ if ( SERVER ) then
 	
 	local captureRate = GetConVar( "lambdaplayers_teamsystem_koth_capturerate" )
 	local captureRange = GetConVar( "lambdaplayers_teamsystem_koth_capturerange" )
+	local scoreGiveTime = GetConVar( "lambdaplayers_teamsystem_koth_scoregaintime" )
 
 	function ENT:Initialize()
 	    self:SetModel( "models/props_combine/CombineThumper002.mdl" )
@@ -95,6 +96,15 @@ if ( SERVER ) then
 	    return false
 	end
 
+	function ENT:BecomeNeutral()
+        self:EmitSound( "lambdaplayers/koth/pointneutral.mp3", 70 )
+        self:SetIsCaptured( false )
+        self:SetCapturePercent( 0 )
+        self:SetCapturerName( "Neutral" )
+        self:SetCapturerColor( vec_white )
+		self:SetCapturePercent( 0 )
+	end
+
 	function ENT:Think()
 		local capName = self:GetCapturerName()
 		
@@ -111,6 +121,8 @@ if ( SERVER ) then
 
 					if self:GetIsCaptured() then
 						if entTeam != capName then
+					    	self:SetCapturePercent( Clamp( capPerc - capRate, 0, 100 ) )
+
 			                if capPerc <= 0 then
 			        			for _, lambda in ipairs( GetLambdaPlayers() ) do
 						            if lambda:GetIsDead() or self:GetCapturerTeamName( lambda ) != capName or random( 1, 100 ) > lambda:GetVoiceChance() / 2 then continue end
@@ -121,15 +133,8 @@ if ( SERVER ) then
 			                    LambdaPlayers_ChatAdd( nil, color_white, "[LTS] ", color_glacier, "[", self:GetCapturerTeamColor( ent ):ToColor(), self:GetPointName(), color_glacier, "]", " was brought to neutral by ", self:GetCapturerColor():ToColor(), ent:Nick() )
 
 								self.OldCapturer = capName
-			                    self:EmitSound( "lambdaplayers/koth/pointneutral.mp3", 70 )
-
-			                    self:SetIsCaptured( false )
-			                    self:SetCapturePercent( 0 )
-			                    self:SetCapturerName( "Neutral" )
-			                    self:SetCapturerColor( vec_white )
+			                    self:BecomeNeutral()
 			                end
-
-					    	self:SetCapturePercent( Clamp( capPerc - capRate, 0, 100 ) )
 						else
 					        self:SetCapturePercent( Clamp( capPerc + capRate, 0, 100 ) )
 						end
@@ -175,7 +180,7 @@ if ( SERVER ) then
 					LambdaTeams:AddTeamPoints( self:GetCapturerName(), 1 )
 				end
 
-				self.PointIncrementTime = ( CurTime() + 4 )
+				self.PointIncrementTime = ( CurTime() + scoreGiveTime:GetFloat() )
 			end
 		end
 
