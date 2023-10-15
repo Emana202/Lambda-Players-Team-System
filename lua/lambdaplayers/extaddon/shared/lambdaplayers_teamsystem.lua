@@ -134,6 +134,7 @@ local gmTPToSpawns = CreateLambdaConvar( "lambdaplayers_teamsystem_gamemodes_tpt
 CreateLambdaConvar( "lambdaplayers_teamsystem_gamemodes_snd_onwin", "lambdaplayers/gamewon/*", true, true, false, "The sound that plays when your team wins a gamemode match", 0, 1, { name = "Sound - On Game Won", type = "Text", category = "Team System - Gamemodes" } )
 CreateLambdaConvar( "lambdaplayers_teamsystem_gamemodes_snd_onlose", "lambdaplayers/gamelost/*", true, true, false, "The sound that plays when your team loses a gamemode match", 0, 1, { name = "Sound - On Game Lost", type = "Text", category = "Team System - Gamemodes" } )
 CreateLambdaConvar( "lambdaplayers_teamsystem_gamemodes_snd_gamestart", "lambdaplayers/gamestart/*", true, true, false, "The sound that plays when a gamemode starts.", 0, 1, { name = "Sound - On Match Begin", type = "Text", category = "Team System - Gamemodes" } )
+CreateLambdaConvar( "lambdaplayers_teamsystem_gamemodes_snd_match60left", "", true, true, false, "The sound that plays when there's 60 seconds left before match's end.", 0, 1, { name = "Sound - 60 Second Left", type = "Text", category = "Team System - Gamemodes" } )
 CreateLambdaConvar( "lambdaplayers_teamsystem_gamemodes_snd_match30left", "lambdaplayers/matchtimeleft/30seconds.mp3", true, true, false, "The sound that plays when there's 30 seconds left before match's end.", 0, 1, { name = "Sound - 30 Second Left", type = "Text", category = "Team System - Gamemodes" } )
 CreateLambdaConvar( "lambdaplayers_teamsystem_gamemodes_snd_match10left", "lambdaplayers/matchtimeleft/10seconds.mp3", true, true, false, "The sound that plays when there's 10 seconds left before match's end.", 0, 1, { name = "Sound - 10 Second Left", type = "Text", category = "Team System - Gamemodes" } )
 
@@ -191,6 +192,7 @@ local function StopGameMatch()
     timer_Remove( "LambdaTeamMatch_ThinkTimer" )
 
     LambdaTeams:StopConVarSound( "lambdaplayers_teamsystem_gamemodes_snd_gamestart" )
+    LambdaTeams:StopConVarSound( "lambdaplayers_teamsystem_gamemodes_snd_match60left" )
     LambdaTeams:StopConVarSound( "lambdaplayers_teamsystem_gamemodes_snd_match30left" )
     LambdaTeams:StopConVarSound( "lambdaplayers_teamsystem_gamemodes_snd_match10left" )
 
@@ -237,7 +239,10 @@ local function GameMatchThinkTimer()
         timeRemain = ( timeRemain - 1 )
         SetGlobalInt( "LambdaTeamMatch_TimeRemaining", timeRemain )
 
-        if timeRemain == 30 then
+        if timeRemain == 60 then
+            LambdaTeams:PlayConVarSound( "lambdaplayers_teamsystem_gamemodes_snd_match60left", "all" )
+        elseif timeRemain == 30 then
+            LambdaTeams:StopConVarSound( "lambdaplayers_teamsystem_gamemodes_snd_match60left" )
             LambdaTeams:PlayConVarSound( "lambdaplayers_teamsystem_gamemodes_snd_match30left", "all" )
         elseif timeRemain == 10 then
             LambdaTeams:StopConVarSound( "lambdaplayers_teamsystem_gamemodes_snd_match30left" )
@@ -322,7 +327,10 @@ local function StartGamemode( ply, gameIndex, stopSnds )
             for _, ply in ipairs( plys ) do
                 if !ply:Alive() then continue end
 
-                local spawnPos, spawnAng = ply.l_SpawnPos, ply.l_SpawnAngles
+                local spawnPos, spawnAng
+                if ply.IsLambdaPlayer then
+                    spawnPos, spawnAng = ply.l_SpawnPos, ply.l_SpawnAngles
+                end
                 if spawnPoints and #spawnPoints > 0 then
                     local rndSpawn = spawnPoints[ random( #spawnPoints ) ]
                     for index, point in RandomPairs( spawnPoints ) do 
@@ -355,8 +363,10 @@ local function StartGamemode( ply, gameIndex, stopSnds )
                     ply:SetVelocity( vector_origin )
                 end
 
-                ply:SetPos( spawnPos )
-                ply:SetAngles( spawnAng )
+                if spawnPos and spawnAng then
+                    ply:SetPos( spawnPos )
+                    ply:SetAngles( spawnAng )
+                end
             end
         end
     end
@@ -382,6 +392,10 @@ end, false, "Start the match of the Capture The Flag gamemode", { name = "Start 
 CreateLambdaConsoleCommand( "lambdaplayers_teamsystem_tdm_startmatch", function( ply )
     StartGamemode( ply, 3, { "lambdaplayers_teamsystem_tdm_snd_10killsleft" } )
 end, false, "Start the match of the Team Deathmatch gamemode", { name = "Start TDM Match", category = "Team System - Gamemodes" } )
+
+CreateLambdaConsoleCommand( "lambdaplayers_teamsystem_kd_startmatch", function( ply )
+    StartGamemode( ply, 4 )
+end, false, "Start the match of the Kill Confirmed gamemode", { name = "Start KD Match", category = "Team System - Gamemodes" } )
 
 --
 
@@ -418,6 +432,12 @@ CreateLambdaConvar( "lambdaplayers_teamsystem_ctf_snd_onreturn", "lambdaplayers/
 ---
 
 CreateLambdaConvar( "lambdaplayers_teamsystem_tdm_snd_10killsleft", "lambdaplayers/tdm/10killsleft.mp3", true, true, false, "The sound that plays when there are only 10 kills left to win.", 0, 1, { name = "Sound - 10 Kills Left", type = "Text", category = "Team System - TDM" } )
+
+---
+
+local kdRemoveTime = CreateLambdaConvar( "lambdaplayers_teamsystem_kd_removetime", 20, true, false, false, "For how much time the pickups can be dropped before they disappear?", 1, 120, { name = "Pickup Remove Time", type = "Slider", decimals = 0, category = "Team System - KD" } )
+local kdCustomMdl = CreateLambdaConvar( "lambdaplayers_teamsystem_kd_custommodel", "", true, false, false, "Custom model that will be set for the pickup. Leave empty to use default skull model.", 0, 1, { name = "Pickup Custom Model", type = "Text", category = "Team System - KD" } )
+local kdUsePoints = CreateLambdaConvar( "lambdaplayers_teamsystem_kd_usekothpoints", 1, true, false, false, "If enabled, kills will be confirmed only when they're delivered to one of KOTH points of team.", 0, 1, { name = "Pickups Use KOTH Points", type = "Bool", category = "Team System - KD" } )
 
 ---
 
@@ -983,11 +1003,21 @@ if ( SERVER ) then
         end
     end
 
+    local function CreateKDPickup( ply )
+        local pickup = ents_Create( "base_anim" )
+        if !IsValid( pickup ) then return end
+
+        pickup:SetPos( ply:GetPos() )
+        pickup:SetAngles( ply:GetAngles() )
+        pickup:SetModel( "" )
+    end
+
     local function LambdaOnKilled( lambda, dmginfo )
         local gamemodeID = LambdaTeams:GetCurrentGamemodeID()
         if gamemodeID == 3 then
             local attackerTeam = LambdaTeams:GetPlayerTeam( dmginfo:GetAttacker() )
             if attackerTeam then LambdaTeams:AddTeamPoints( attackerTeam, 1 ) end
+        elseif gamemodeID == 4 then
         end
     end
 
@@ -1181,6 +1211,8 @@ if ( CLIENT ) then
                 pointsName = "Flags Captured"
             elseif gamemodeID == 3 then
                 pointsName = "Total Kills"
+            elseif gamemodeID == 4 then
+                pointsName = "Kills Confirmed"
             end
 
             local drawWidth = ( scrW / 45 )
