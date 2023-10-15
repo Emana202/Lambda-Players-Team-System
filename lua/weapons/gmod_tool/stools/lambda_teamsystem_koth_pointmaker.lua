@@ -50,7 +50,7 @@ function TOOL:LeftClick( tr )
 			undo.AddEntity( kothPoint )
 		undo.Finish("Lambda KOTH Point " .. pointName)
 
-		ownerAddCleanup( "sents", kothPoint )
+		owner:AddCleanup( "sents", kothPoint )
     end
 
     return true
