@@ -25,9 +25,18 @@ TOOL.ClientConVar = {
 	[ "custommodel" ] = "",
 }
 
+local IsValidModel = util.IsValidModel
+local ents_Create = ( SERVER and ents.Create )
+local undo = undo
+local FindInSphere = ents.FindInSphere
+local IsValid = IsValid
+local pairs = pairs
+local ipairs = ipairs
+local vgui_Create = ( CLIENT and vgui.Create )
+
 function TOOL:LeftClick( tr )
 	if ( SERVER ) then
-		local flag = ents.Create( "lambda_ctf_flag" )
+		local flag = ents_Create( "lambda_ctf_flag" )
 		flag:SetPos( tr.HitPos )
 
 		local teamName = self:GetClientInfo( "teamname" )
@@ -37,18 +46,19 @@ function TOOL:LeftClick( tr )
 		flag.IsCaptureZone = ( self:GetClientNumber( "iscapturezone", 1 ) == 1 )
 
 		local mdl = self:GetClientInfo( "custommodel" )
-		flag.CustomModel = ( mdl != "" and mdl )
+		flag.CustomModel = ( ( mdl != "" and IsValidModel( mdl ) ) and mdl )
 
 		flag:Spawn()
 		flag:SetPos( tr.HitPos - tr.HitNormal * flag:OBBMins().z )
 
+		local owner = self:GetOwner()
 		local addname = ( teamName != "" and teamName or flag:GetCreationID() )
 		undo.Create("Lambda Flag " .. addname )
-			undo.SetPlayer( self:GetOwner() )
+			undo.SetPlayer( owner )
 			undo.AddEntity( flag )
 		undo.Finish("Lambda Flag " .. addname )
 
-		self:GetOwner():AddCleanup( "sents", flag )
+		owner:AddCleanup( "sents", flag )
     end
 
     return true
@@ -56,12 +66,14 @@ end
 
 function TOOL:RightClick(tr)
 	if ( SERVER ) then
-		for _, ent in ipairs( ents.FindInSphere( tr.HitPos, 5 ) ) do
+		for _, ent in ipairs( FindInSphere( tr.HitPos, 5 ) ) do
 			if IsValid( ent ) then 
 				if ent.IsLambdaFlag then 
 					ent:Remove() 
+					break
 				elseif ent.IsLambdaCaptureFlag then
 					ent.FlagOwner:Remove()
+					break
 				end
 			end
 		end
@@ -75,7 +87,7 @@ function TOOL.BuildCPanel( panel )
     for k, v in pairs( LambdaTeams.TeamOptions ) do combo:AddChoice( k, v ) end
 	panel:ControlHelp( "The team that this flag should belong to after spawning." )
 
-	local refresh = vgui.Create( "DButton" )
+	local refresh = vgui_Create( "DButton" )
 	panel:AddItem( refresh )
 	refresh:SetText( "Refresh Team List" )
 

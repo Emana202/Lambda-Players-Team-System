@@ -23,9 +23,17 @@ TOOL.ClientConVar = {
 	[ "startteam" ] = ""
 }
 
+local ents_Create = ( SERVER and ents.Create )
+local undo = undo
+local FindInSphere = ents.FindInSphere
+local IsValid = IsValid
+local pairs = pairs
+local ipairs = ipairs
+local vgui_Create = ( CLIENT and vgui.Create )
+
 function TOOL:LeftClick( tr )
 	if ( SERVER ) then
-		local kothPoint = ents.Create( "lambda_koth_point" )
+		local kothPoint = ents_Create( "lambda_koth_point" )
 		kothPoint:SetPos( tr.HitPos )
 		
 		local pointName = self:GetClientInfo( "pointname" )
@@ -36,12 +44,13 @@ function TOOL:LeftClick( tr )
 		
 		kothPoint:Spawn()
 
+		local owner = self:GetOwner()
 		undo.Create("Lambda KOTH Point " .. pointName)
-			undo.SetPlayer( self:GetOwner() )
+			undo.SetPlayer( owner )
 			undo.AddEntity( kothPoint )
 		undo.Finish("Lambda KOTH Point " .. pointName)
 
-		self:GetOwner():AddCleanup( "sents", kothPoint )
+		ownerAddCleanup( "sents", kothPoint )
     end
 
     return true
@@ -49,8 +58,11 @@ end
 
 function TOOL:RightClick( tr )
 	if ( SERVER ) then
-		for _, ent in ipairs( ents.FindInSphere( tr.HitPos, 5 ) ) do
-			if IsValid( ent ) and ent.IsLambdaKOTH then ent:Remove() end
+		for _, ent in ipairs( FindInSphere( tr.HitPos, 5 ) ) do
+			if IsValid( ent ) and ent.IsLambdaKOTH then 
+				ent:Remove() 
+				break
+			end
 		end
 	end
 
@@ -65,7 +77,7 @@ function TOOL.BuildCPanel( panel )
     for k, v in pairs( LambdaTeams.TeamOptions ) do combo:AddChoice( k, v ) end
 	panel:ControlHelp( "The team that this point should be assigned to after spawning." )
 
-	local refresh = vgui.Create( "DButton" )
+	local refresh = vgui_Create( "DButton" )
 	panel:AddItem( refresh )
 	refresh:SetText( "Refresh Team List" )
 

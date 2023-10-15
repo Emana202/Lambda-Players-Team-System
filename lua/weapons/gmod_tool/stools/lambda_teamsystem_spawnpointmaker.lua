@@ -22,12 +22,20 @@ TOOL.ClientConVar = {
 	[ "spawnteam" ] = ""
 }
 
+local ents_Create = ( SERVER and ents.Create )
+local undo = undo
+local FindInSphere = ents.FindInSphere
+local IsValid = IsValid
+local pairs = pairs
+local ipairs = ipairs
+local vgui_Create = ( CLIENT and vgui.Create )
+
 function TOOL:LeftClick( tr )
 	local spawnTeam = self:GetClientInfo( "spawnteam" )
 
 	if ( SERVER ) then
 		local changedTeam = false
-		for _, ent in ipairs( ents.FindInSphere( tr.HitPos, 5 ) ) do
+		for _, ent in ipairs( FindInSphere( tr.HitPos, 5 ) ) do
 			if IsValid( ent ) and ent.IsLambdaSpawnpoint then 
 				ent:SetSpawnTeam( spawnTeam )
 				ent:SetTeamColor( LambdaTeams:GetTeamColor( spawnTeam ) )
@@ -36,23 +44,25 @@ function TOOL:LeftClick( tr )
 		end
 
 		if !changedTeam then
-			local spawnPoint = ents.Create( "lambda_teamspawnpoint" )
+			local spawnPoint = ents_Create( "lambda_teamspawnpoint" )
 			spawnPoint:SetPos( tr.HitPos )
 
-			local spawnAng = ( tr.StartPos - tr.HitPos ):Angle().y
-			spawnPoint:SetAngles( Angle( 0, spawnAng, 0 ) )
+			local spawnAng = ( tr.StartPos - tr.HitPos ):Angle()
+			spawnAng.x = 0
+			spawnAng.z = 0
+			spawnPoint:SetAngles( spawnAng )
 
 			spawnPoint.SpawnTeam = spawnTeam
-
 			spawnPoint:Spawn()
 
+			local owner = self:GetOwner()
 			local addname = ( teamName != "" and teamName or spawnPoint:GetCreationID() )
 			undo.Create("Lambda Spawn Point " .. addname )
-				undo.SetPlayer( self:GetOwner() )
+				undo.SetPlayer( owner )
 				undo.AddEntity( spawnPoint )
 			undo.Finish("Lambda Spawn Point " .. addname )
 
-			self:GetOwner():AddCleanup( "sents", spawnPoint )
+			owner:AddCleanup( "sents", spawnPoint )
     	end
     end
 
@@ -61,9 +71,10 @@ end
 
 function TOOL:RightClick(tr)
 	if ( SERVER ) then
-		for _, ent in ipairs( ents.FindInSphere( tr.HitPos, 5 ) ) do
+		for _, ent in ipairs( FindInSphere( tr.HitPos, 5 ) ) do
 			if IsValid( ent ) and ent.IsLambdaSpawnpoint then 
-				ent:Remove() 
+				ent:Remove()
+				break
 			end
 		end
 	end
@@ -76,7 +87,7 @@ function TOOL.BuildCPanel( panel )
     for k, v in pairs( LambdaTeams.TeamOptions ) do combo:AddChoice( k, v ) end
 	panel:ControlHelp( "The team that this spawn point will belong to." )
 
-	local refresh = vgui.Create( "DButton" )
+	local refresh = vgui_Create( "DButton" )
 	panel:AddItem( refresh )
 	refresh:SetText( "Refresh Team List" )
 

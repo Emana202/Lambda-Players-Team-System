@@ -327,7 +327,7 @@ local function StartGamemode( ply, gameIndex, stopSnds )
                     local rndSpawn = spawnPoints[ random( #spawnPoints ) ]
                     for index, point in RandomPairs( spawnPoints ) do 
                         table_remove( spawnPoints, index )
-                        
+
                         if !point.IsOccupied then 
                             rndSpawn = point
                             break
@@ -345,14 +345,18 @@ local function StartGamemode( ply, gameIndex, stopSnds )
                     end
                 end
 
-                ply:SetState( "Idle" )
-                ply:SetEnemy( nil )
-                ply:ResetAI()
-                ply:CancelMovement() 
+                if ply.IsLambdaPlayer then
+                    ply:SetState( "Idle" )
+                    ply:SetEnemy( nil )
+                    ply:ResetAI()
+                    ply:CancelMovement() 
+                    ply.loco:SetVelocity( vector_origin )
+                else
+                    ply:SetVelocity( vector_origin )
+                end
 
                 ply:SetPos( spawnPos )
                 ply:SetAngles( spawnAng )
-                ply.loco:SetVelocity( vector_origin )
             end
         end
     end
@@ -1169,7 +1173,7 @@ if ( CLIENT ) then
             local timeRemain = GetGlobalInt( "LambdaTeamMatch_TimeRemaining", 0 )
             if timeRemain != -1 then
                 local timeFormatted = FormattedTime( timeRemain, "%02i:%02i" )
-                SimpleTextOutlined( "Match Time: " .. timeFormatted, "lambda_teamsystem_matchtimer", ( scrW / 2 ), ( scrH / 50 ) + LambdaScreenScale( 1 + uiScale:GetFloat() ), color_white, TEXT_ALIGN_CENTER, TEXT_ALIGN_TOP, 1, color_black )
+                SimpleTextOutlined( "Time Left: " .. timeFormatted, "lambda_teamsystem_matchtimer", ( scrW / 2 ), ( scrH / 50 ) + LambdaScreenScale( 1 + uiScale:GetFloat() ), color_white, TEXT_ALIGN_CENTER, TEXT_ALIGN_TOP, 1, color_black )
             end
 
             local pointsName = "Total Points"
