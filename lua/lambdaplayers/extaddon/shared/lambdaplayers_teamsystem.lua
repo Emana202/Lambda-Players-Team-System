@@ -1189,6 +1189,8 @@ if ( CLIENT ) then
 
         local traceEnt = ply:GetEyeTrace().Entity
         if LambdaIsValid( traceEnt ) and traceEnt.IsLambdaPlayer then
+            if LambdaRunHook( "LambdaShowNameDisplay", traceent ) == false then return end
+
             local entTeam = LambdaTeams:GetPlayerTeam( traceEnt )
             if entTeam then 
                 local friendTbl = traceEnt.l_friends
