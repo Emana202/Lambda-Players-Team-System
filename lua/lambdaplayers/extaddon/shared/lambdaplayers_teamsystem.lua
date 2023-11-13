@@ -23,6 +23,7 @@ local timer_Simple = timer.Simple
 local timer_Create = timer.Create
 local timer_Remove = timer.Remove
 local file_Exists = file.Exists
+local LocalPlayer = ( CLIENT and LocalPlayer )
 
 local modulePrefix = "Lambda_TeamSystem_"
 local defaultPlyClr = Color( 255, 255, 100 )
@@ -479,7 +480,9 @@ function LambdaTeams:GetTeamColor( teamName, realColor )
 end
 
 function LambdaTeams:GetPlayerTeam( ply )
+    if !ply and CLIENT then ply = LocalPlayer() end
     if !IsValid( ply ) then return end
+    
     local plyTeam = nil
 
     if ply.IsLambdaPlayer then
@@ -501,6 +504,7 @@ function LambdaTeams:GetPlayerTeam( ply )
 end
 
 function LambdaTeams:AreTeammates( ent, target )
+    if !target and CLIENT then target = LocalPlayer() end
     if !IsValid( ent ) or !IsValid( target ) then return end
 
     local entTeam = LambdaTeams:GetPlayerTeam( ent )
@@ -602,7 +606,7 @@ if ( SERVER ) then
                         ply:SetTeam( teamID )
                         if ply.l_TeamColor then ply:SetPlyColor( ply.l_TeamColor:ToVector() ) end
                     elseif ply:GetTeam() != 0 then
-                        ply:SetTeam( 0 )
+                        ply:SetTeam( 1001 )
                         if ply.l_PlyNoTeamColor then ply:SetPlyColor( ply.l_PlyNoTeamColor ) end
                     end
                 elseif ply:IsPlayer() then
@@ -655,22 +659,8 @@ if ( SERVER ) then
         if useMdls then
             local plyMdls = teamData.playermdls
             if plyMdls and #plyMdls > 0 then 
-                lambda:SetModel( plyMdls[ random( #plyMdls ) ] ) 
-
-                lambda.l_BodyGroupData = {}
-                if rndBodyGroups:GetBool() then
-                    for _, bg in ipairs( lambda:GetBodyGroups() ) do
-                        local subMdls = #bg.submodels
-                        if subMdls == 0 then continue end 
-
-                        local rndID = random( 0, subMdls )
-                        lambda:SetBodygroup( bg.id, rndID )
-                        lambda.l_BodyGroupData[ bg.id ] = rndID
-                    end
-
-                    local skinCount = lambda:SkinCount()
-                    if skinCount > 0 then lambda:SetSkin( random( 0, skinCount - 1 ) ) end
-                end
+                lambda:SetExternalVar( "l_TeamPlyMdls", plyMdls )
+                lambda:SetPlayerModel()
             end
         end
 
@@ -804,7 +794,7 @@ if ( SERVER ) then
                 local myPos = self:WorldSpaceCenter()
                 local eneDist = ( self:InCombat() and myPos:DistToSqr( self:GetEnemy():WorldSpaceCenter() ) )
                 local myForward = self:GetForward()
-                local dotView = ( validEnemy and 0.33 or 0.5 )
+                local dotView = ( eneDist and 0.25 or 0.4 )
 
                 local surroundings = self:FindInSphere( nil, 2000, function( ent )
                     if !LambdaIsValid( ent ) then return false end
@@ -1029,6 +1019,11 @@ if ( SERVER ) then
         end
     end
 
+    local function LambdaOnSetPlayerModel( lambda )
+        local teamMdls = lambda.l_TeamPlyMdls
+        if teamMdls then return teamMdls end
+    end
+
     hook.Add( "PlayerSpawnedNPC", modulePrefix .. "OnPlayerSpawnedNPC", OnPlayerSpawnedNPC )
     hook.Add( "LambdaOnInitialize", modulePrefix .. "LambdaOnInitialize", LambdaOnInitialize )
     hook.Add( "LambdaPostRecreated", modulePrefix .. "LambdaPostRecreated", LambdaPostRecreated )
@@ -1041,6 +1036,7 @@ if ( SERVER ) then
     hook.Add( "LambdaOnOtherInjured", modulePrefix .. "OnOtherInjured", LambdaOnOtherInjured )
     hook.Add( "LambdaOnBeginMove", modulePrefix .. "OnBeginMove", LambdaOnBeginMove )
     hook.Add( "LambdaCanSwitchWeapon", modulePrefix .. "LambdaCanSwitchWeapon", LambdaCanSwitchWeapon )
+    hook.Add( "LambdaOnSetPlayerModel", modulePrefix .. "LambdaOnSetPlayerModel", LambdaOnSetPlayerModel )
     hook.Add( "PlayerShouldTakeDamage", modulePrefix .. "OnPlayerShouldTakeDamage", OnPlayerShouldTakeDamage )
     hook.Add( "PlayerInitialSpawn", modulePrefix .. "OnPlayerInitialSpawn", OnPlayerInitialSpawn )
     hook.Add( "PlayerSpawn", modulePrefix .. "OnPlayerSpawn", OnPlayerSpawn )
@@ -1050,7 +1046,6 @@ end
 
 if ( CLIENT ) then
 
-    local LocalPlayer = LocalPlayer
     local GetConVar = GetConVar
     local surface = surface
     local PlayClientSound = surface.PlaySound
