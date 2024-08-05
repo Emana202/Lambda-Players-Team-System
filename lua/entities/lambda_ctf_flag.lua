@@ -128,6 +128,8 @@ if ( SERVER ) then
         LambdaTeams:PlayConVarSound( "lambdaplayers_teamsystem_ctf_snd_oncapture_enemy", teamName )
         
         local flagHolder = self:GetFlagHolderEnt()
+        flagHolder.l_CTF_Flag = nil
+
         for _, lambda in ipairs( GetLambdaPlayers() ) do
             if lambda:GetIsDead() or flagHolder != lambda and random( 1, 100 ) > lambda:GetVoiceChance() then continue end
 
@@ -187,8 +189,31 @@ if ( SERVER ) then
         traceTbl.filter[ 2 ] = self.CaptureZone
 
         for _, ent in ipairs( FindInSphere( self.CaptureZone:GetPos(), 100 ) ) do
-            if ent != self and IsValid( ent ) and ent.IsLambdaFlag and ent:GetIsPickedUp() and ent:GetTeamName() != teamName and LambdaTeams:GetPlayerTeam( ent:GetFlagHolderEnt() ) == teamName then
+            if ent == self or !IsValid( ent ) then continue end
+
+            if ent.l_KDPickup and ent.l_KDPickedUp then
+                local holder = ent.l_KDPickedUp
+                local pickTeam = LambdaTeams:GetPlayerTeam( holder )
+                if pickTeam == teamName then
+                    traceTbl.endpos = ent:WorldSpaceCenter()
+                    traceTbl.filter[ 3 ] = holder
+
+                    local visTr = TraceLine( traceTbl )
+                    if visTr.Entity == ent or !visTr.Hit then
+                        ent:EmitSound( "items/gift_pickup.wav", 75 )
+                        ent:Remove()
+                        LambdaTeams:AddTeamPoints( pickTeam, 1 )
+
+                        holder.l_HasKDPickup = false
+                        holder.l_CTF_Flag = nil
+                        continue
+                    end
+                end
+            end
+
+            if ent.IsLambdaFlag and ent:GetIsPickedUp() and ent:GetTeamName() != teamName and LambdaTeams:GetPlayerTeam( ent:GetFlagHolderEnt() ) == teamName then
                 traceTbl.endpos = ent:WorldSpaceCenter()
+                traceTbl.filter[ 3 ] = ent:GetFlagHolderEnt()
 
                 local visTr = TraceLine( traceTbl )
                 if visTr.Entity == ent or !visTr.Hit then

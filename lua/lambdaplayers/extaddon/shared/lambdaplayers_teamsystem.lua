@@ -5,8 +5,8 @@ local tostring = tostring
 local pairs = pairs
 local GetGlobalInt = GetGlobalInt
 local SetGlobalInt = SetGlobalInt
-local Rand = math.Rand
-local random = math.random
+
+
 local table_Count = table.Count
 local table_Empty = table.Empty
 local team_SetUp = team.SetUp
@@ -142,8 +142,12 @@ CreateLambdaConvar( "lambdaplayers_teamsystem_gamemodes_snd_match10left", "lambd
 LambdaTeams.TeamPoints = LambdaTeams.TeamPoints or {}
 LambdaTeams.SoundsToStop = LambdaTeams.SoundsToStop or {}
 
-local gamemodeName, pointsName
+LambdaTeams.GamemodeName = LambdaTeams.GamemodeName or ""
+LambdaTeams.PointScoreName = LambdaTeams.PointScoreName or ""
+
 local nextTimerProgressT = ( CurTime() + 1 )
+
+--
 
 local function GetTheMatchStats( endedPrematurely )
     local winnerTeam, winnerClr
@@ -166,7 +170,7 @@ local function GetTheMatchStats( endedPrematurely )
     end
 
     if samePoints != #contesters then
-        LambdaPlayers_ChatAdd( nil, color_white, "[LTS] ", winnerClr, winnerTeam, color_glacier, " won the match of ", color_white, gamemodeName, color_glacier, " with total of ", color_white, tostring( curPoints ), color_glacier, " ", pointsName, ( curPoints > 1 and "s" or "" ), "!" )
+        LambdaPlayers_ChatAdd( nil, color_white, "[LTS] ", winnerClr, winnerTeam, color_glacier, " won the match of ", color_white, LambdaTeams.GamemodeName, color_glacier, " with total of ", color_white, tostring( curPoints ), color_glacier, " ", LambdaTeams.PointScoreName, ( curPoints > 1 and "s" or "" ), "!" )
         LambdaTeams:PlayConVarSound( "lambdaplayers_teamsystem_gamemodes_snd_onwin", winnerTeam )
 
         for _, contestData in ipairs( contesters ) do
@@ -175,15 +179,15 @@ local function GetTheMatchStats( endedPrematurely )
 
             local contestPoints = contestData[ 2 ]
             if contestPoints == 0 then
-                LambdaPlayers_ChatAdd( nil, color_white, "[LTS] ", contestData[ 3 ], contestTeam, color_glacier, " ended up with no ", pointsName, "s at all :(" )
+                LambdaPlayers_ChatAdd( nil, color_white, "[LTS] ", contestData[ 3 ], contestTeam, color_glacier, " ended up with no ", LambdaTeams.PointScoreName, "s at all :(" )
             else
-                LambdaPlayers_ChatAdd( nil, color_white, "[LTS] ", contestData[ 3 ], contestTeam, color_glacier, " ended with total of ", color_white, tostring( contestPoints ), color_glacier, " ", pointsName, ( contestPoints > 1 and "s" or "" ) )
+                LambdaPlayers_ChatAdd( nil, color_white, "[LTS] ", contestData[ 3 ], contestTeam, color_glacier, " ended with total of ", color_white, tostring( contestPoints ), color_glacier, " ", LambdaTeams.PointScoreName, ( contestPoints > 1 and "s" or "" ) )
             end
 
             LambdaTeams:PlayConVarSound( "lambdaplayers_teamsystem_gamemodes_snd_onlose", contestTeam )
         end
     elseif !endedPrematurely then
-        LambdaPlayers_ChatAdd( nil, color_white, "[LTS] ", color_glacier, "Stalemate! Each team got the same amount of ", pointsName, ( curPoints > 1 and "s" or "" ), "!" )
+        LambdaPlayers_ChatAdd( nil, color_white, "[LTS] ", color_glacier, "Stalemate! Each team got the same amount of ", LambdaTeams.PointScoreName, ( curPoints > 1 and "s" or "" ), "!" )
         LambdaTeams:PlayConVarSound( "lambdaplayers_teamsystem_gamemodes_snd_onlose" )
     end
 end
@@ -209,6 +213,10 @@ local function StopGameMatch()
     for _, kp in ipairs( ents_FindByClass( "lambda_koth_point" ) ) do
         if !kp:GetIsCaptured() then continue end
         kp:BecomeNeutral()
+    end
+
+    for _, pickup in ipairs( ents_FindByClass( "base_anim" ) ) do
+        if pickup.l_KDPickup then pickup:Remove() end
     end
 end
 
@@ -301,15 +309,18 @@ local function StartGamemode( ply, gameIndex, stopSnds )
         curTeams[ plyTeam ][ #curTeams[ plyTeam ] + 1 ] = ply
     end
 
-    pointsName = "point"
+    LambdaTeams.PointScoreName = "point"
     if gameIndex == 1 then
-        gamemodeName = "King Of The Hill"
+        LambdaTeams.GamemodeName = "King Of The Hill"
     elseif gameIndex == 2 then
-        gamemodeName = "Capture The Flag"
-        pointsName = "flag capture"
+        LambdaTeams.GamemodeName = "Capture The Flag"
+        LambdaTeams.PointScoreName = "flag capture"
     elseif gameIndex == 3 then
-        gamemodeName = "Team Deathmatch"
-        pointsName = "kill"
+        LambdaTeams.GamemodeName = "Team Deathmatch"
+        LambdaTeams.PointScoreName = "kill"
+    elseif gameIndex == 4 then
+        LambdaTeams.GamemodeName = "Kill Confirmed"
+        LambdaTeams.PointScoreName = "tags collected"
     end
 
     local timeLimit = gmMatchTime:GetInt()
@@ -333,7 +344,7 @@ local function StartGamemode( ply, gameIndex, stopSnds )
                     spawnPos, spawnAng = ply.l_SpawnPos, ply.l_SpawnAngles
                 end
                 if spawnPoints and #spawnPoints > 0 then
-                    local rndSpawn = spawnPoints[ random( #spawnPoints ) ]
+                    local rndSpawn = spawnPoints[ LambdaRNG( #spawnPoints ) ]
                     for index, point in RandomPairs( spawnPoints ) do 
                         table_remove( spawnPoints, index )
 
@@ -348,7 +359,7 @@ local function StartGamemode( ply, gameIndex, stopSnds )
                 elseif rasp:GetBool() then
                     LambdaSpawnPoints = ( LambdaSpawnPoints or LambdaGetPossibleSpawns() )
                     if LambdaSpawnPoints and #LambdaSpawnPoints > 0 then 
-                        local rndPoint = LambdaSpawnPoints[ random( #LambdaSpawnPoints ) ]
+                        local rndPoint = LambdaSpawnPoints[ LambdaRNG( #LambdaSpawnPoints ) ]
                         spawnPos = rndPoint:GetPos()
                         spawnAng = rndPoint:GetAngles()
                     end
@@ -438,7 +449,7 @@ CreateLambdaConvar( "lambdaplayers_teamsystem_tdm_snd_10killsleft", "lambdaplaye
 
 local kdRemoveTime = CreateLambdaConvar( "lambdaplayers_teamsystem_kd_removetime", 20, true, false, false, "For how much time the pickups can be dropped before they disappear?", 1, 120, { name = "Pickup Remove Time", type = "Slider", decimals = 0, category = "Team System - KD" } )
 local kdCustomMdl = CreateLambdaConvar( "lambdaplayers_teamsystem_kd_custommodel", "", true, false, false, "Custom model that will be set for the pickup. Leave empty to use default skull model.", 0, 1, { name = "Pickup Custom Model", type = "Text", category = "Team System - KD" } )
-local kdUsePoints = CreateLambdaConvar( "lambdaplayers_teamsystem_kd_usekothpoints", 1, true, false, false, "If enabled, kills will be confirmed only when they're delivered to one of KOTH points of team.", 0, 1, { name = "Pickups Use KOTH Points", type = "Bool", category = "Team System - KD" } )
+local kdUsePoints = CreateLambdaConvar( "lambdaplayers_teamsystem_kd_usecapturepoints", 1, true, false, false, "If enabled, kills will be confirmed only when they're delivered to one of capture points of team.", 0, 1, { name = "Pickups Use Capture Points", type = "Bool", category = "Team System - KD" } )
 
 ---
 
@@ -459,6 +470,8 @@ function LambdaTeams:GetTeamPoints( teamName )
 end
 
 function LambdaTeams:AddTeamPoints( teamName, count )
+    if !LambdaTeams:GamemodeMatchActive() then return end
+
     local teamPoints = LambdaTeams.TeamPoints[ teamName ]
     if !teamPoints then
         teamPoints = "LambdaTeamMatch_TeamPoints_" .. teamName
@@ -543,6 +556,10 @@ function LambdaTeams:GetSpawnPoints( teamName )
     return points
 end
 
+function LambdaTeams:IsCarryingPickup( ply )
+    return ( ply.l_HasFlag or ply.l_HasKDPickup )
+end
+
 ---
 
 if ( SERVER ) then
@@ -555,6 +572,7 @@ if ( SERVER ) then
 
     local GetNearestNavArea = navmesh.GetNearestNavArea
     local VectorRand = VectorRand
+    local ents_Create = ents.Create
     local FrameTime = FrameTime
     local RandomPairs = RandomPairs
     local table_Random = table.Random
@@ -562,6 +580,8 @@ if ( SERVER ) then
     local min = math.min
     local abs = math.abs
     local lower = string.lower
+    local IsValidModel = util.IsValidModel
+    local SpriteTrail = util.SpriteTrail
 
     local rndBodyGroups = GetConVar( "lambdaplayers_lambda_allowrandomskinsandbodygroups" )
 
@@ -641,10 +661,10 @@ if ( SERVER ) then
         if team == "random" then
             if rndNoTeams then
                 local teamCount = table_Count( teamTbl )
-                if random( teamCount + 1 ) > teamCount then return end
+                if LambdaRNG( teamCount + 1 ) > teamCount then return end
             end
 
-            teamData = table_Random( teamTbl )
+            teamData = table_LambdaRNG( teamTbl )
         else
             teamData = teamTbl[ team ]
         end
@@ -685,7 +705,7 @@ if ( SERVER ) then
     end
 
     local function LambdaOnInitialize( self )
-        self.l_NextEnemyTeamSearchT = CurTime() + Rand( 0.33, 1.0 )
+        self.l_NextEnemyTeamSearchT = CurTime() + LambdaRNG( 0.33, 1.0, true )
         self:SetExternalVar( "l_PlyNoTeamColor", self:GetPlyColor() )
 
         self:SimpleTimer( 0.1, function()
@@ -707,7 +727,7 @@ if ( SERVER ) then
             if useSpawnpoints:GetBool() then
                 local spawnPoints = LambdaTeams:GetSpawnPoints( self.l_TeamName )
                 if #spawnPoints > 0 then 
-                    local spawnPoint = spawnPoints[ random( #spawnPoints ) ]
+                    local spawnPoint = spawnPoints[ LambdaRNG( #spawnPoints ) ]
                     for _, point in RandomPairs( spawnPoints ) do if !point.IsOccupied then spawnPoint = point end end
                     
                     self:SetPos( spawnPoint:GetPos() )
@@ -742,7 +762,7 @@ if ( SERVER ) then
 
                 local wepRestrictions = self.l_TeamWepRestrictions
                 if wepRestrictions and !wepRestrictions[ self.l_Weapon ] then 
-                    local _, rndWep = table_Random( wepRestrictions )
+                    local _, rndWep = table_LambdaRNG( wepRestrictions )
                     self:SwitchWeapon( rndWep )
                 end
             end
@@ -750,11 +770,13 @@ if ( SERVER ) then
     end
 
     local function LambdaPostRecreated( self )
-        if !self.l_TeamName then return end
-        self:SetNW2String( "lambda_teamname", self.l_TeamName )
-        self:SetNWString( "lambda_teamname", self.l_TeamName )
+        local teamName = self.l_TeamName
+        if !teamName then return end
+        
+        self:SetNW2String( "lambda_teamname", teamName )
+        self:SetNWString( "lambda_teamname", teamName )
 
-        local teamID = LambdaTeams.RealTeams[ self.l_TeamName ]
+        local teamID = LambdaTeams.RealTeams[ teamName ]
         if teamID then self:SetTeam( teamID ) end
 
         if !self.l_TeamColor then return end
@@ -773,10 +795,10 @@ if ( SERVER ) then
     local function LambdaOnRespawn( self )
         if !useSpawnpoints:GetBool() then return end
 
-        local spawnPoints = LambdaTeams:GetSpawnPoints( teamName )
+        local spawnPoints = LambdaTeams:GetSpawnPoints( self.l_TeamName )
         if #spawnPoints == 0 then return end 
         
-        local spawnPoint = spawnPoints[ random( #spawnPoints ) ]
+        local spawnPoint = spawnPoints[ LambdaRNG( #spawnPoints ) ]
         for _, point in RandomPairs( spawnPoints ) do if !point.IsOccupied then spawnPoint = point end end
 
         self:SetPos( spawnPoint:GetPos() )
@@ -787,7 +809,7 @@ if ( SERVER ) then
         if isdead or !teamsEnabled:GetBool() then return end
 
         if CurTime() >= self.l_NextEnemyTeamSearchT then
-            self.l_NextEnemyTeamSearchT = CurTime() + Rand( 0.1, 0.5 )
+            self.l_NextEnemyTeamSearchT = CurTime() + LambdaRNG( 0.1, 0.5, true )
 
             local kothEnt = self.l_KOTH_Entity
             if self.l_TeamName and LambdaTeams:AreTeamsHostile() or IsValid( kothEnt ) then
@@ -809,7 +831,7 @@ if ( SERVER ) then
                 end )
 
                 if #surroundings > 0 then 
-                    self:AttackTarget( surroundings[ random( #surroundings ) ] ) 
+                    self:AttackTarget( surroundings[ LambdaRNG( #surroundings ) ] ) 
                 end
             end
         end
@@ -820,7 +842,7 @@ if ( SERVER ) then
     end
 
     local function LambdaOnAttackTarget( self, ent )
-        if self.l_HasFlag and ent.IsLambdaPlayer and !ent.l_HasFlag and ( !ent:InCombat() or ent:GetEnemy() != self or !ent:IsInRange( self, 768 ) ) then return true end
+        if LambdaTeams:IsCarryingPickup( self ) and ent.IsLambdaPlayer and !LambdaTeams:IsCarryingPickup( ent ) and ( !ent:InCombat() or ent:GetEnemy() != self or !ent:IsInRange( self, 768 ) ) then return true end
     end
 
     local function LambdaOnInjured( self, dmginfo )
@@ -835,12 +857,12 @@ if ( SERVER ) then
         local attacker = dmginfo:GetAttacker()
         if attacker == self or !LambdaIsValid( attacker ) then return end
 
-        if LambdaTeams:AreTeammates( self, victim ) and self:CanTarget( attacker ) and ( self:IsInRange( victim, random( 400, 700 ) ) or self:CanSee( victim ) ) then
+        if LambdaTeams:AreTeammates( self, victim ) and self:CanTarget( attacker ) and ( self:IsInRange( victim, LambdaRNG( 400, 700 ) ) or self:CanSee( victim ) ) then
             self:AttackTarget( attacker )
             return
         end
 
-        if LambdaTeams:AreTeammates( self, attacker ) and self:CanTarget( victim ) and ( self:IsInRange( attacker, random( 400, 700 ) ) or self:CanSee( attacker ) ) then
+        if LambdaTeams:AreTeammates( self, attacker ) and self:CanTarget( victim ) and ( self:IsInRange( attacker, LambdaRNG( 400, 700 ) ) or self:CanSee( attacker ) ) then
             self:AttackTarget( victim )
             return 
         end
@@ -848,16 +870,16 @@ if ( SERVER ) then
 
     local rndMovePos = Vector()
     
-    local function LambdaOnBeginMove( self, pos, onNavmesh )
+    local function LambdaOnBeginMove( self, pos, onNavmesh, options )
         if !teamsEnabled:GetBool() then return end
 
         local state = self:GetState()
         if state != "Idle" and state != "FindTarget" then return end
 
         local kothEnt = self.l_KOTH_Entity
-        if !IsValid( kothEnt ) or kothEnt:GetIsCaptured() and random( kothEnt:GetCapturerName() == kothEnt:GetCapturerTeamName( self ) and 2 or 8 ) == 1 then
+        if !IsValid( kothEnt ) or kothEnt:GetIsCaptured() and LambdaRNG( kothEnt:GetCapturerName() == kothEnt:GetCapturerTeamName( self ) and 2 or 8 ) == 1 then
             local kothEnts = ents_FindByClass( "lambda_koth_point" )
-            if #kothEnts > 0 then kothEnt = kothEnts[ random( #kothEnts ) ] end
+            if #kothEnts > 0 then kothEnt = kothEnts[ LambdaRNG( #kothEnts ) ] end
         end
         if IsValid( kothEnt ) then
             local capRange = kothCapRange:GetInt()
@@ -865,24 +887,24 @@ if ( SERVER ) then
             local movePos
             local kothPos = kothEnt:GetPos()
             if !kothEnt:GetIsCaptured() or kothEnt:GetContesterTeam() != "" or kothEnt:GetCapturerName() != kothEnt:GetCapturerTeamName( self ) then
-                rndMovePos.x = random( -150, 150 )
-                rndMovePos.y = random( -150, 150 )
+                rndMovePos.x = LambdaRNG( -150, 150 )
+                rndMovePos.y = LambdaRNG( -150, 150 )
                 movePos = ( kothPos + rndMovePos )
             else
                 movePos = self:GetRandomPosition( kothPos, capRange )
             end
-
-            self:RecomputePath( movePos )
-            self:SetRun( random( 3 ) != 1 and ( !self:IsInRange( movePos, capRange ) or !self:CanSee( kothEnt ) ) )
-
             self.l_KOTH_Entity = kothEnt
-            return
+
+            options.run = ( LambdaRNG( 3 ) != 1 and ( !self:IsInRange( movePos, capRange ) or !self:CanSee( kothEnt ) ) )
+            return movePos, options
         end
 
         local teamName = self.l_TeamName
         if teamName then
-            local ctfFlag, hasFlag = self.l_CTF_Flag, self.l_HasFlag
-            if !IsValid( ctfFlag ) or hasFlag and ctfFlag:GetTeamName() != teamName or random( 3 ) == 1 then
+            local ctfFlag, hasFlag = self.l_CTF_Flag, LambdaTeams:IsCarryingPickup( self )
+            if !IsValid( ctfFlag ) or hasFlag and ctfFlag:GetTeamName() != teamName or LambdaRNG( 3 ) == 1 then
+                ctfFlag = nil
+
                 for _, flag in RandomPairs( ents_FindByClass( "lambda_ctf_flag" ) ) do
                     if flag == ctfFlag or !IsValid( flag ) then continue end
 
@@ -896,10 +918,10 @@ if ( SERVER ) then
             if IsValid( ctfFlag ) then
                 local movePos
                 if hasFlag or ctfFlag:GetTeamName() != teamName then
-                    rndMovePos.x = random( -40, 40 )
-                    rndMovePos.y = random( -40, 40 )
+                    rndMovePos.x = LambdaRNG( -40, 40 )
+                    rndMovePos.y = LambdaRNG( -40, 40 )
                     movePos = ( ( hasFlag and ctfFlag.CaptureZone or ctfFlag ):GetPos() + rndMovePos )
-                    self:SetRun( true )
+                    options.run = true
                 else
                     if ctfFlag:GetTeamName() == teamName and ctfFlag:GetIsPickedUp() then
                         local flagHolder = ctfFlag:GetFlagHolderEnt()
@@ -911,23 +933,39 @@ if ( SERVER ) then
                     end
 
                     movePos = self:GetRandomPosition( ctfFlag:GetPos(), 300 )
-                    self:SetRun( !self:IsInRange( movePos, 500 ) )
+                    options.run = !self:IsInRange( movePos, 500 )
                 end
 
-                self:RecomputePath( movePos )
-                self.l_CTF_Flag = ctfFlag
-                return
+                return movePos, options
+            end
+            self.l_CTF_Flag = ctfFlag
+
+            if !self.l_HasKDPickup and LambdaTeams:GetCurrentGamemodeID() == 4 then
+                local pickup = self:GetClosestEntity( nil, 1000, function( ent )
+                    return ( ent.l_KDPickup and !ent.l_KDPickedUp and ent.l_LambdaTeam != teamName and ( self:IsInRange( ent, 300 ) or self:CanSee( ent ) ) )
+                end )
+
+                print( pickup )
+                if IsValid( pickup ) then
+                    options.run = true
+                    options.tol = 10
+
+                    options.callback = function( self ) if self.l_HasKDPickup or !IsValid( pickup ) or pickup.l_KDPickedUp then return false end end
+                    options.cbTime = 0.5
+
+                    return pickup:GetPos(), options
+                end
             end
 
-            if random( 3 ) == 1 then
+            if LambdaRNG( 3 ) == 1 then
                 local combatChance = ( self:GetCombatChance() * min( self:Health() / self:GetMaxHealth(), 1.0 ) )
-                if random( 100 ) <= combatChance then
+                if LambdaRNG( 100 ) <= combatChance then
                     if huntDown:GetBool() and LambdaTeams:AreTeamsHostile() then
                         for _, ent in RandomPairs( ents_GetAll() ) do
                             if ent == self or LambdaTeams:AreTeammates( self, ent ) or !self:CanTarget( ent ) then continue end
-                            local rndPos = ( self:GetRandomPosition( ent:GetPos(), random( 300, 550 ) ) )
-                            self:SetRun( random( 3 ) == 1 )
-                            self:RecomputePath( rndPos ); return
+                            local rndPos = ( self:GetRandomPosition( ent:GetPos(), LambdaRNG( 300, 550 ) ) )
+                            options.run = ( LambdaRNG( 4 ) == 1 )
+                            return rndPos, options
                         end
                     end
                 elseif stickTogether:GetBool() then
@@ -938,14 +976,15 @@ if ( SERVER ) then
                         local path = self.l_CurrentPath
                         if !self:IsInRange( ent, 750 ) and IsValid( path ) then
                             movePos = ent
-                            self.l_moveoptions.update = 0.2
-                            path:SetGoalTolerance( 50 )
+                            options.update = 0.2
+                            options.tol = 50
                         else
-                            movePos = self:GetRandomPosition( ent:GetPos(), random( 150, 350 ) )
+                            movePos = self:GetRandomPosition( ent:GetPos(), LambdaRNG( 150, 350 ) )
                         end
 
-                        self:SetRun( random( 4 ) == 1 or !self:IsInRange( movePos, 1500 ) )                            
-                        self:RecomputePath( movePos ); return
+                        options.autorun = true
+                        options.run = ( LambdaRNG( 4 ) == 1 )
+                        return movePos, options
                     end
                 end
             end
@@ -985,7 +1024,7 @@ if ( SERVER ) then
         local plyTeam = ply:GetInfo( "lambdaplayers_teamsystem_playerteam" )
         local spawnPoints = LambdaTeams:GetSpawnPoints( plyTeam == "" and nil or plyTeam )
         if #spawnPoints > 0 then 
-            local spawnPoint = spawnPoints[ random( #spawnPoints ) ]
+            local spawnPoint = spawnPoints[ LambdaRNG( #spawnPoints ) ]
             for _, point in RandomPairs( spawnPoints ) do if !point.IsOccupied then spawnPoint = point end end
 
             ply:SetPos( spawnPoint:GetPos() )
@@ -993,13 +1032,112 @@ if ( SERVER ) then
         end
     end
 
+    --
+
+    local function OnKDPickupThink( pickup )
+        local holder = pickup.l_KDPickedUp
+        if holder then
+            pickup.l_DropTime = CurTime()
+
+            if !IsValid( holder ) or !holder:Alive() then
+                local rndImpulse = VectorRand( -1, 1 )
+                rndImpulse.z = 1; rndImpulse:Normalize()
+                local velocity = ( rndImpulse * 300 )
+                pickup:SetVelocity( velocity )
+
+                if IsValid( holder ) then holder.l_HasKDPickup = false end
+                pickup.l_KDPickedUp = false
+            else
+                pickup:SetPos( holder:WorldSpaceCenter() + holder:GetUp() * 10 - holder:GetForward() * 20 )
+            end
+        else
+            local removeT = ( ( pickup.l_DropTime + kdRemoveTime:GetFloat() ) - CurTime() )
+            if removeT <= 0 then
+                pickup:EmitSound( "items/gift_drop.wav", 70 )
+                pickup:Remove()
+                return 
+            end
+            if removeT <= 5 then
+                if !pickup.l_FadeTime then
+                    pickup.l_FadeTime = CurTime()
+                end
+
+                local clr = pickup:GetColor()
+                clr.a = abs( 255 - ( ( CurTime() - pickup.l_FadeTime ) * 275 % 255 ) * 2 )
+                pickup:SetColor( clr )
+            elseif pickup.l_FadeTime then
+                pickup.l_FadeTime = false
+            end
+        end
+
+        pickup:SetAngles( Angle( 0, ( CurTime() * 60 % 360 ), 0 ) )
+        pickup:NextThink( CurTime() )
+        return true
+    end
+
+    local function OnKDPickupTouch( pickup, ent )
+        if pickup.l_KDPickedUp or ( CurTime() - pickup.l_DropTime ) < 1 then return end
+        if !IsValid( ent ) or !ent:IsPlayer() and !ent.IsLambdaPlayer or ent.l_HasKDPickup or !ent:Alive() then return end
+
+        local pickTeam = LambdaTeams:GetPlayerTeam( ent )
+        if !pickTeam or pickTeam == pickup.l_LambdaTeam then return end
+
+        pickup:EmitSound( "items/gift_pickup.wav", 75 )
+
+        if !kdUsePoints:GetBool() then
+            pickup:Remove()
+            LambdaTeams:AddTeamPoints( pickTeam, 1 )
+        else
+            pickup.l_KDPickedUp = ent
+            ent.l_HasKDPickup = true
+            ent:CancelMovement() 
+
+            local clr = pickup:GetColor()
+            clr.a = 255
+            pickup:SetColor( clr )
+        end
+    end
+
     local function CreateKDPickup( ply )
         local pickup = ents_Create( "base_anim" )
         if !IsValid( pickup ) then return end
 
-        pickup:SetPos( ply:GetPos() )
+        local mdl = kdCustomMdl:GetString()
+        if #mdl == 0 or !IsValidModel( mdl ) then
+            mdl = "models/gibs/hgibs.mdl"
+        end
+        pickup:SetModel( mdl )
+        pickup:SetModelScale( 1.25 )
+
+        pickup:SetPos( ply:WorldSpaceCenter() )
         pickup:SetAngles( ply:GetAngles() )
-        pickup:SetModel( "" )
+        pickup:Spawn()
+        
+        pickup:PhysicsDestroy()
+        pickup:SetSolidFlags( FSOLID_NOT_SOLID + FSOLID_TRIGGER )
+        pickup:SetMoveType( MOVETYPE_FLYGRAVITY )
+        pickup:SetMoveCollide( MOVECOLLIDE_FLY_BOUNCE )
+        pickup:SetSolid( SOLID_BBOX )
+        pickup:SetCollisionBounds( Vector( -12, -12, -22 ), Vector( 12, 12, 22 ) )
+        pickup:SetRenderMode( RENDERMODE_TRANSCOLOR )
+        
+        local rndImpulse = VectorRand( -1, 1 )
+        rndImpulse.z = 1; rndImpulse:Normalize()
+        local velocity = ( rndImpulse * 300 )
+        pickup:SetVelocity( velocity )
+
+        pickup.l_LambdaTeam = LambdaTeams:GetPlayerTeam( ply )
+        pickup.l_KDPickup = true
+        pickup.l_KDPickedUp = false
+        pickup.l_FadeTime = false
+        pickup.l_DropTime = CurTime()
+
+        local clr = LambdaTeams:GetTeamColor( pickup.l_LambdaTeam, true )
+        pickup:SetColor( clr )
+        pickup.l_Trail = SpriteTrail( pickup, 0, clr, true, 40, 40, 2, ( 1 / ( 40 - 40 ) * 0.5 ) , "trails/laser" )
+
+        pickup.Think = OnKDPickupThink
+        pickup.Touch = OnKDPickupTouch
     end
 
     local function LambdaOnKilled( lambda, dmginfo )
@@ -1007,7 +1145,8 @@ if ( SERVER ) then
         if gamemodeID == 3 then
             local attackerTeam = LambdaTeams:GetPlayerTeam( dmginfo:GetAttacker() )
             if attackerTeam then LambdaTeams:AddTeamPoints( attackerTeam, 1 ) end
-        elseif gamemodeID == 4 then
+        elseif gamemodeID == 4 and LambdaTeams:GetPlayerTeam( lambda ) then
+            CreateKDPickup( lambda )
         end
     end
 
@@ -1016,6 +1155,8 @@ if ( SERVER ) then
         if gamemodeID == 3 then
             local attackerTeam = LambdaTeams:GetPlayerTeam( attacker )
             if attackerTeam then LambdaTeams:AddTeamPoints( attackerTeam, 1 ) end
+        elseif gamemodeID == 4 and LambdaTeams:GetPlayerTeam( ply ) then
+            CreateKDPickup( ply )
         end
     end
 
@@ -1115,7 +1256,7 @@ if ( CLIENT ) then
 
         if string_EndsWith( sndPath, "*" ) then
             local dirFiles = file_Find( "sound/" .. sndPath, "GAME" )
-            sndPath = string_Replace( sndPath .. dirFiles[ random( #dirFiles ) ], "*", "" )
+            sndPath = string_Replace( sndPath .. dirFiles[ LambdaRNG( #dirFiles ) ], "*", "" )
         end
 
         local snd = CreateSound( Entity( 0 ), sndPath )
